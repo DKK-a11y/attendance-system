@@ -27,7 +27,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'enterprise-attendance-v2';
 
-export default function App() {
+const App = () => {
   // --- 狀態管理 ---
   const [isLogin, setIsLogin] = useState(false);
   const [user, setUser] = useState(null);
@@ -50,7 +50,7 @@ export default function App() {
   const curD = new Date().getDate();
   const allLeaveTypes = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
 
-  // 初始假別餘額 (若資料庫無資料則以此為準)
+  // 初始假別餘額
   const initialBalances = {
     "A001": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
     "A002": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
@@ -78,7 +78,6 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // 監聽考勤總表
     const attRef = collection(db, 'artifacts', appId, 'public', 'data', 'attendance');
     const unsubAtt = onSnapshot(attRef, (snapshot) => {
       const data = {};
@@ -86,7 +85,6 @@ export default function App() {
       setAttendanceData(data);
     }, (err) => console.error("Fetch Att Error:", err));
 
-    // 監聽假別餘額
     const balRef = collection(db, 'artifacts', appId, 'public', 'data', 'balances');
     const unsubBal = onSnapshot(balRef, (snapshot) => {
       const bals = { ...initialBalances };
@@ -97,7 +95,6 @@ export default function App() {
     return () => { unsubAtt(); unsubBal(); };
   }, [user]);
 
-  // 更新時間
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -113,14 +110,12 @@ export default function App() {
     setIsLogin(false); setEmpId(''); setPassword(''); setPunchMsg(''); setShowSearchResult(false);
   };
 
-  // 打卡邏輯
   const doPunch = async (type) => {
     if (!user) return;
     const t = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const id = empId.toUpperCase();
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id);
     
-    // 取得舊資料
     const currentData = attendanceData[id] || {};
     if (!currentData[curM]) currentData[curM] = {};
     
@@ -137,7 +132,6 @@ export default function App() {
     setPunchMsg(`✅ ${type}成功：${t}`);
   };
 
-  // 請假提交
   const submitLeave = async () => {
     if (!user) return;
     const id = empId.toUpperCase();
@@ -146,14 +140,12 @@ export default function App() {
     const d = lDate.getDate();
     const lType = leaveForm.type;
 
-    // 更新考勤
     const attRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id);
     const currentAtt = attendanceData[id] || {};
     if (!currentAtt[m]) currentAtt[m] = {};
     currentAtt[m][d] = { s: lType, on: "請假", off: "請假" };
     await setDoc(attRef, currentAtt);
 
-    // 更新餘額
     const balRef = doc(db, 'artifacts', appId, 'public', 'data', 'balances', id);
     const currentBal = { ...leaveBalances[id] };
     if (currentBal[lType]) {
@@ -165,7 +157,6 @@ export default function App() {
     setShowLeaveModal(false);
   };
 
-  // 撤回請假
   const handleCancelLeave = async () => {
     if (!user) return;
     const { emp, m, d, type } = cancelTarget;
@@ -183,9 +174,8 @@ export default function App() {
     setCancelTarget(null);
   };
 
-  // 出席統計
   const globalStats = useMemo(() => {
-    let todayP = 0, yTotal = 0, yP = 0;
+    let todayP = 0, yP = 0;
     employees.forEach(e => {
       if (attendanceData[e]?.[curM]?.[curD]) todayP++;
       Object.keys(attendanceData[e] || {}).forEach(m => {
@@ -198,7 +188,6 @@ export default function App() {
     };
   }, [attendanceData]);
 
-  // 搜尋統計
   const searchStats = useMemo(() => {
     const id = searchId.toUpperCase();
     if (!employees.includes(id)) return null;
@@ -277,6 +266,7 @@ export default function App() {
         </div>
       )}
 
+      {/* 撤回確認 */}
       {cancelTarget && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-xs rounded-[2rem] p-8 shadow-2xl text-center">
@@ -409,4 +399,6 @@ export default function App() {
       </main>
     </div>
   );
-}
+};
+
+export default App;
