@@ -12,30 +12,24 @@ import {
   doc, 
   onSnapshot, 
   setDoc, 
+  getDoc,
   query 
 } from 'firebase/firestore';
 import { 
   Clock, Users, Coffee, AlertCircle, Send, CheckCircle2, 
   Calendar, LogIn, LogOut, Search, X, ClipboardList, 
-  TrendingUp, BarChart2 
+  Trash2, TrendingUp, PieChart, BarChart, AlertTriangle 
 } from 'lucide-react';
 
-// --- Firebase 基礎配置 (優先讀取 Vercel 環境變數) ---
+// --- Firebase 配置 ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
-  : {
-      apiKey: "",
-      authDomain: "your-app.firebaseapp.com",
-      projectId: "your-app",
-      storageBucket: "your-app.appspot.com",
-      messagingSenderId: "123",
-      appId: "123"
-    };
+  : { apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'advanced-attendance-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'v3-attendance-cloud';
 
 export default function App() {
   // --- 狀態管理 ---
@@ -43,309 +37,420 @@ export default function App() {
   const [isLogin, setIsLogin] = useState(false);
   const [empId, setEmpId] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(true);
-  
-  // 考勤數據 (依據截圖邏輯)
+  const [currentViewMonth, setCurrentViewMonth] = useState(new Date().getMonth()); 
   const [attendanceData, setAttendanceData] = useState({});
   const [leaveBalances, setLeaveBalances] = useState({});
+  const [punchMsg, setPunchMsg] = useState('');
+  const [searchId, setSearchId] = useState('');
+  const [showSearchResult, setShowSearchResult] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [punchMsg, setPunchMsg] = useState(null);
-  
-  // UI 狀態
   const [showLeaveModal, setShowLeaveModal] = useState(false);
-  const [leaveForm, setLeaveForm] = useState({ type: '特休', date: new Date().toISOString().split('T')[0] });
-  const [searchTerm, setSearchTerm] = useState('');
+  const [leaveForm, setLeaveForm] = useState({ 
+    date: new Date().toISOString().split('T')[0], 
+    type: '特休' 
+  });
+  const [cancelTarget, setCancelTarget] = useState(null);
 
-  // 靜態資料 (完整繼承原代碼)
+  // --- 靜態配置 ---
   const employees = ["A001", "A002", "A003", "A004", "A005"];
-  const leaveTypes = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
-  const initialBalances = {
-    "A001": { "特休": 20, "年假": 7 },
-    "A002": { "特休": 10, "年假": 7 },
-    "A003": { "特休": 10, "年假": 7 },
-    "A004": { "特休": 7, "年假": 7 },
-    "A005": { "特休": 10, "年假": 7 }
-  };
+  const curY = 2026;
+  const curM = new Date().getMonth();
+  const curD = new Date().getDate();
+  const allLeaveTypes = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
 
-  // --- 1. 初始化 Auth (符合 Vercel 部署規範) ---
+  // --- 1. Firebase Auth 初始化 ---
   useEffect(() => {
     const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error("Auth Error:", err);
-      } finally {
-        setLoading(false);
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currUser) => {
-      setUser(currUser);
-    });
+    const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // --- 2. 數據監聽 (實時同步 Firestore) ---
+  // --- 2. 實時數據監聽 (取代隨機生成) ---
   useEffect(() => {
     if (!user) return;
 
-    // 監聽考勤紀錄 (Path: /artifacts/{appId}/public/data/attendance)
+    // 監聽考勤紀錄
     const attRef = collection(db, 'artifacts', appId, 'public', 'data', 'attendance');
     const unsubAtt = onSnapshot(attRef, (snapshot) => {
       const data = {};
       snapshot.forEach(doc => { data[doc.id] = doc.data(); });
       setAttendanceData(data);
-    });
+    }, (err) => console.error("Firestore Error:", err));
 
-    // 監聽假額紀錄
+    // 監聽假別餘額
     const balRef = collection(db, 'artifacts', appId, 'public', 'data', 'balances');
     const unsubBal = onSnapshot(balRef, (snapshot) => {
       const data = {};
       snapshot.forEach(doc => { data[doc.id] = doc.data(); });
-      setLeaveBalances(Object.keys(data).length ? data : initialBalances);
+      setLeaveBalances(data);
     });
 
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => { unsubAtt(); unsubBal(); clearInterval(timer); };
   }, [user]);
 
-  // --- 3. 業務邏輯 ---
+  // --- 3. 核心業務邏輯 ---
   const handleLogin = () => {
     const id = empId.toUpperCase();
-    if (employees.includes(id) && password === '1234') {
+    if (employees.includes(id) && password === '8888') {
       setIsLogin(true);
-      setPunchMsg({ type: 'success', text: `歡迎回來, ${id}` });
+      setPunchMsg(`歡迎回來 ${id}`);
     } else {
-      setPunchMsg({ type: 'error', text: '員編或密碼錯誤 (預設 1234)' });
+      setPunchMsg('工號或密碼錯誤 (預設 8888)');
     }
   };
 
-  const handlePunch = async (type) => {
+  const doPunch = async (type) => {
     if (!isLogin || !user) return;
+    const t = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const id = empId.toUpperCase();
-    const now = new Date();
-    const curM = (now.getMonth() + 1).toString();
-    const curD = now.getDate().toString();
-    const timeStr = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const m = new Date().getMonth();
+    const d = new Date().getDate();
+
+    const currentDoc = JSON.parse(JSON.stringify(attendanceData[id] || { [m]: {} }));
+    if (!currentDoc[m]) currentDoc[m] = {};
     
-    const currentDoc = JSON.parse(JSON.stringify(attendanceData[id] || {}));
-    if (!currentDoc[curM]) currentDoc[curM] = {};
-    
-    let status = '正常';
-    if (type === 'on' && timeStr > "09:00") status = '遲到';
-    
-    currentDoc[curM][curD] = { 
-      ...currentDoc[curM][curD],
-      [type]: timeStr, 
-      status: type === 'on' ? status : (currentDoc[curM][curD]?.status || '正常') 
+    // 判斷遲到邏輯
+    let status = "正常";
+    if (type === '上班' && t > "09:00:00") status = "遲到";
+
+    currentDoc[m][d] = { 
+      ...currentDoc[m][d], 
+      s: type === '上班' ? status : (currentDoc[m][d]?.s || "正常"),
+      [type === '上班' ? 'on' : 'off']: t 
     };
 
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id), currentDoc);
-      setPunchMsg({ type: 'success', text: `${type === 'on' ? '上班' : '下班'}成功: ${timeStr}` });
-    } catch (err) {
-      setPunchMsg({ type: 'error', text: '存檔失敗' });
-    }
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id), currentDoc);
+    setPunchMsg(`✅ 已紀錄 ${type}：${t}`);
   };
 
-  const handleLeaveSubmit = async () => {
+  const submitLeave = async () => {
     const id = empId.toUpperCase();
-    const [y, m, d] = leaveForm.date.split('-');
-    const month = parseInt(m).toString();
-    const day = parseInt(d).toString();
+    const lDate = new Date(leaveForm.date);
+    const m = lDate.getMonth();
+    const d = lDate.getDate();
+    const lType = leaveForm.type;
 
+    // 更新考勤
     const currentAtt = JSON.parse(JSON.stringify(attendanceData[id] || {}));
-    if (!currentAtt[month]) currentAtt[month] = {};
-    currentAtt[month][day] = { type: leaveForm.type, status: leaveForm.type };
+    if (!currentAtt[m]) currentAtt[m] = {};
+    currentAtt[m][d] = { s: lType, on: "請假", off: "請假" };
 
+    // 更新餘額 (減 1)
     const currentBal = JSON.parse(JSON.stringify(leaveBalances[id] || {}));
-    if (currentBal[leaveForm.type]) {
-      currentBal[leaveForm.type] = (currentBal[leaveForm.type] || 0) - 1;
-    }
+    if (!currentBal[lType]) currentBal[lType] = { total: 10, used: 0 };
+    currentBal[lType].used = (currentBal[lType].used || 0) + 1;
 
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id), currentAtt);
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'balances', id), currentBal);
     
+    setPunchMsg(`✅ 已申請 ${m+1}/${d} ${lType}`);
     setShowLeaveModal(false);
-    setPunchMsg({ type: 'success', text: `已提交 ${leaveForm.type} 申請` });
   };
 
-  // --- 4. 統計運算 ---
-  const stats = useMemo(() => {
-    const id = (searchTerm || (isLogin ? empId : '')).toUpperCase();
-    if (!employees.includes(id)) return null;
-    const empData = attendanceData[id] || {};
-    let res = { total: 0, late: 0, leave: 0 };
-    Object.values(empData).forEach(m => {
-      Object.values(m).forEach(d => {
-        res.total++;
-        if (d.status === '遲到') res.late++;
-        if (leaveTypes.includes(d.status)) res.leave++;
+  const handleCancelLeave = async () => {
+    const { emp, m, d, type } = cancelTarget;
+    
+    const currentAtt = JSON.parse(JSON.stringify(attendanceData[emp] || {}));
+    if (currentAtt[m]) delete currentAtt[m][d];
+
+    const currentBal = JSON.parse(JSON.stringify(leaveBalances[emp] || {}));
+    if (currentBal[type]) {
+      currentBal[type].used = Math.max(0, (currentBal[type].used || 1) - 1);
+    }
+
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', emp), currentAtt);
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'balances', emp), currentBal);
+    setCancelTarget(null);
+  };
+
+  // --- 4. 統計運算 (與原版一致) ---
+  const globalStats = useMemo(() => {
+    let todayPresent = 0;
+    let monthTotal = 0, monthPresent = 0;
+    let yearTotal = 0, yearPresent = 0;
+
+    employees.forEach(emp => {
+      if (attendanceData[emp]?.[curM]?.[curD]) todayPresent++;
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].forEach(m => {
+        const days = new Date(curY, m + 1, 0).getDate();
+        for (let d = 1; d <= days; d++) {
+          const w = new Date(curY, m, d).getDay();
+          if (w === 0 || w === 6) continue;
+          if (m === curM && d > curD) break;
+          yearTotal++;
+          if (attendanceData[emp]?.[m]?.[d]) {
+            yearPresent++;
+            if (m === currentViewMonth) { monthTotal++; monthPresent++; }
+          } else if (m === currentViewMonth) { monthTotal++; }
+        }
       });
     });
-    return res;
-  }, [searchTerm, attendanceData, empId, isLogin]);
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 text-slate-400">系統初始化中...</div>;
+    return {
+      today: (todayPresent / employees.length * 100).toFixed(1),
+      month: (monthPresent / Math.max(1, monthTotal) * 100).toFixed(1),
+      year: (yearPresent / Math.max(1, yearTotal) * 100).toFixed(1)
+    };
+  }, [attendanceData, currentViewMonth]);
 
-  return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
-      <nav className="max-w-6xl mx-auto flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-        <div className="flex items-center gap-2">
-          <div className="bg-blue-600 p-2 rounded-xl"><Clock className="text-white w-5 h-5" /></div>
-          <span className="font-bold text-lg tracking-tight">AI 智慧考勤雲端版</span>
-        </div>
-        {isLogin && (
-          <button onClick={() => setIsLogin(false)} className="text-slate-400 hover:text-red-500 flex items-center gap-1 text-sm transition-colors">
-            <LogOut size={16} /> 登出
-          </button>
-        )}
-      </nav>
+  const searchStats = useMemo(() => {
+    const id = searchId.toUpperCase();
+    if (!employees.includes(id)) return null;
+    const stats = { year: 0, yearTotal: 0, months: {}, yearlyLeaves: {}, yearlyExceptions: { "遲到": 0, "早退": 0 } };
+    
+    [0, 1, 2].forEach(m => {
+      stats.months[m] = { present: 0, total: 0, leaves: {}, exceptions: { "遲到": 0, "早退": 0 } };
+      const days = new Date(curY, m + 1, 0).getDate();
+      for (let d = 1; d <= days; d++) {
+        const w = new Date(curY, m, d).getDay();
+        if (w === 0 || w === 6) continue;
+        if (m === curM && d > curD) break;
+        stats.yearTotal++;
+        stats.months[m].total++;
+        const day = attendanceData[id]?.[m]?.[d];
+        if (day) {
+          stats.year++;
+          stats.months[m].present++;
+          if (day.s === "遲到" || day.s === "早退") {
+            stats.yearlyExceptions[day.s]++;
+            stats.months[m].exceptions[day.s]++;
+          } else if (day.s !== "正常") {
+            stats.yearlyLeaves[day.s] = (stats.yearlyLeaves[day.s] || 0) + 1;
+            stats.months[m].leaves[day.s] = (stats.months[m].leaves[day.s] || 0) + 1;
+          }
+        }
+      }
+    });
+    return stats;
+  }, [searchId, attendanceData]);
 
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* 左側面板 */}
-        <div className="lg:col-span-4 space-y-6">
-          {!isLogin ? (
-            <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
-              <h2 className="text-xl font-black mb-6 flex items-center gap-2">員工登入</h2>
-              <div className="space-y-4">
-                <input 
-                  className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-blue-500 transition-all outline-none" 
-                  placeholder="員工編號 (如 A001)" 
-                  value={empId} 
-                  onChange={e => setEmpId(e.target.value)}
-                />
-                <input 
-                  type="password"
-                  className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-blue-500 transition-all outline-none" 
-                  placeholder="登入密碼" 
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && handleLogin()}
-                />
-                <button onClick={handleLogin} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">登入系統</button>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 text-center">
-              <div className="mb-6">
-                <p className="text-slate-400 text-sm mb-1">{currentTime.toLocaleDateString('zh-TW', { weekday: 'long' })}</p>
-                <h3 className="text-4xl font-mono font-black text-slate-800 tracking-tighter">
-                  {currentTime.toLocaleTimeString('zh-TW', { hour12: false })}
-                </h3>
-                <div className="mt-3 inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold border border-green-100">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                  已登入：{empId.toUpperCase()}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <button onClick={() => handlePunch('on')} className="p-4 bg-blue-600 text-white rounded-2xl font-bold hover:opacity-90 transition-all active:scale-95 shadow-md shadow-blue-100">上班打卡</button>
-                <button onClick={() => handlePunch('off')} className="p-4 bg-slate-800 text-white rounded-2xl font-bold hover:opacity-90 transition-all active:scale-95 shadow-md shadow-slate-100">下班打卡</button>
-              </div>
-              <button onClick={() => setShowLeaveModal(true)} className="w-full p-4 bg-amber-50 text-amber-700 rounded-2xl font-bold border border-amber-100 hover:bg-amber-100 transition-colors">線上請假</button>
-            </div>
-          )}
-
-          {punchMsg && (
-            <div className={`p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top duration-300 ${punchMsg.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-500 text-white'}`}>
-              <span className="text-sm font-bold">{punchMsg.text}</span>
-              <X size={16} className="cursor-pointer" onClick={() => setPunchMsg(null)} />
-            </div>
-          )}
-        </div>
-
-        {/* 右側看板 */}
-        <div className="lg:col-span-8 bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <h2 className="text-lg font-bold flex items-center gap-2"><Users className="text-blue-600" size={20} /> 出勤戰情室</h2>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input 
-                className="pl-10 pr-4 py-2 bg-slate-100 rounded-xl text-sm w-full md:w-64 outline-none focus:ring-2 focus:ring-blue-500" 
-                placeholder="搜尋員工代碼..." 
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="p-6">
-            <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="p-4 bg-slate-50 rounded-2xl">
-                <p className="text-xs text-slate-400 font-bold mb-1">本月出勤</p>
-                <p className="text-xl font-black">{stats?.total || 0} 天</p>
-              </div>
-              <div className="p-4 bg-red-50 rounded-2xl">
-                <p className="text-xs text-red-400 font-bold mb-1">遲到紀錄</p>
-                <p className="text-xl font-black text-red-600">{stats?.late || 0} 次</p>
-              </div>
-              <div className="p-4 bg-blue-50 rounded-2xl">
-                <p className="text-xs text-blue-400 font-bold mb-1">剩餘特休</p>
-                <p className="text-xl font-black text-blue-600">
-                  {leaveBalances[searchTerm.toUpperCase() || empId.toUpperCase()]?.['特休'] || 0} 天
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-slate-400 font-bold border-b border-slate-50">
-                    <th className="pb-4 text-left">員工</th>
-                    <th className="pb-4 text-left">狀態</th>
-                    <th className="pb-4 text-left">上班</th>
-                    <th className="pb-4 text-left">下班</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {employees.map(id => {
-                    const today = new Date();
-                    const record = attendanceData[id]?.[today.getMonth() + 1]?.[today.getDate()];
-                    return (
-                      <tr key={id} className="group hover:bg-slate-50 transition-colors">
-                        <td className="py-4 font-bold text-slate-700">{id}</td>
-                        <td className="py-4">
-                          <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${
-                            record?.type ? 'bg-amber-100 text-amber-600' :
-                            record?.status === '正常' ? 'bg-green-100 text-green-600' :
-                            record?.status === '遲到' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'
-                          }`}>
-                            {record?.type || record?.status || '尚未打卡'}
-                          </span>
-                        </td>
-                        <td className="py-4 font-mono text-slate-500">{record?.on || '--:--'}</td>
-                        <td className="py-4 font-mono text-slate-500">{record?.off || '--:--'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+  if (!isLogin) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
+        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600">
+          <h2 className="text-3xl font-black text-slate-800 tracking-tight">AI 智慧考勤</h2>
+          <div className="space-y-4 mt-8">
+            <input type="text" placeholder="工號 A001-A005" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase" value={empId} onChange={e => setEmpId(e.target.value)} />
+            <input type="password" placeholder="密碼 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} />
+            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl hover:bg-blue-700 transition-all">進入系統</button>
           </div>
         </div>
       </div>
+    );
+  }
 
-      {/* 請假 Modal */}
-      {showLeaveModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-xl font-bold mb-6">填寫假單</h3>
+  const daysInMonth = new Date(curY, currentViewMonth + 1, 0).getDate();
+  const wNames = ['日', '一', '二', '三', '四', '五', '六'];
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      {/* 搜尋結果報表 */}
+      {showSearchResult && searchStats && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] p-10 shadow-2xl relative animate-in zoom-in duration-300 max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setShowSearchResult(false)} className="absolute top-8 right-8 p-3 bg-slate-100 hover:bg-slate-200 rounded-full"><X size={24}/></button>
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl">{searchId.toUpperCase()}</div>
+              <div><h3 className="text-2xl font-black text-slate-800">員工出席報表</h3><p className="text-slate-400 font-bold">統計範圍：2026年 第一季度</p></div>
+            </div>
+            <div className="grid grid-cols-4 gap-3 mb-8 text-center">
+              <div className="bg-blue-50 p-4 rounded-3xl border border-blue-100"><p className="text-[9px] font-black text-blue-400 uppercase">出席率</p><p className="text-2xl font-black text-blue-600">{((searchStats.year/searchStats.yearTotal)*100).toFixed(1)}%</p></div>
+              <div className="bg-indigo-50 p-4 rounded-3xl border border-indigo-100"><p className="text-[9px] font-black text-indigo-400 uppercase">總請假</p><p className="text-2xl font-black text-indigo-600">{Object.values(searchStats.yearlyLeaves).reduce((a,b)=>a+b, 0)} D</p></div>
+              <div className="bg-amber-50 p-4 rounded-3xl border border-amber-100"><p className="text-[9px] font-black text-amber-500 uppercase">總遲到</p><p className="text-2xl font-black text-amber-600">{searchStats.yearlyExceptions["遲到"]} 次</p></div>
+              <div className="bg-rose-50 p-4 rounded-3xl border border-rose-100"><p className="text-[9px] font-black text-rose-500 uppercase">總早退</p><p className="text-2xl font-black text-rose-600">{searchStats.yearlyExceptions["早退"]} 次</p></div>
+            </div>
             <div className="space-y-4">
-              <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl outline-none" value={leaveForm.date} onChange={e => setLeaveForm({...leaveForm, date: e.target.value})} />
-              <select className="w-full p-4 bg-slate-50 rounded-2xl outline-none appearance-none" value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})}>
-                {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <button onClick={handleLeaveSubmit} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-bold shadow-lg shadow-blue-100 mt-2">確認提交</button>
-              <button onClick={() => setShowLeaveModal(false)} className="w-full text-slate-400 text-sm font-bold">取消</button>
+              {[0, 1, 2].map(m => (
+                <div key={m} className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+                  <div className="flex justify-between mb-2"><span className="text-sm font-black text-slate-700">{m+1}月統計</span></div>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(searchStats.months[m].leaves).map(([type, count]) => (
+                      <span key={type} className="text-[10px] font-bold bg-white border px-3 py-1 rounded-xl">{type}: {count} 天</span>
+                    ))}
+                    {searchStats.months[m].exceptions["遲到"] > 0 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-3 py-1 rounded-xl">遲到: {searchStats.months[m].exceptions["遲到"]}</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
+
+      {/* 預約請假 */}
+      {showLeaveModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-black text-slate-800">預約請假</h3><button onClick={() => setShowLeaveModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20}/></button></div>
+            <div className="space-y-4">
+              <input type="date" value={leaveForm.date} onChange={e => setLeaveForm({...leaveForm, date: e.target.value})} className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none" />
+              <div className="grid grid-cols-2 gap-2">
+                {allLeaveTypes.map(type => (
+                  <button key={type} onClick={() => setLeaveForm({...leaveForm, type})} className={`p-3 text-xs font-bold rounded-xl border ${leaveForm.type === type ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white'}`}>{type}</button>
+                ))}
+              </div>
+              <button onClick={submitLeave} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-black transition-all">確認提交假單</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 取消請假確認 */}
+      {cancelTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xs rounded-[2rem] p-8 shadow-2xl text-center">
+            <Trash2 size={32} className="mx-auto text-rose-500 mb-4" />
+            <h3 className="text-lg font-black text-slate-800 mb-6">確定取消這筆請假？</h3>
+            <div className="flex gap-3">
+              <button onClick={() => setCancelTarget(null)} className="flex-1 py-3 font-bold text-slate-400">返回</button>
+              <button onClick={handleCancelLeave} className="flex-1 py-3 bg-rose-500 text-white rounded-xl font-bold">確認取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <header className="bg-white border-b sticky top-0 z-50 px-8 py-4 shadow-sm">
+        <div className="max-w-7xl mx-auto grid grid-cols-3 items-center">
+          <div className="flex gap-3">
+             {[
+               { label: '今日出席', val: globalStats.today, color: 'text-blue-600' },
+               { label: '當月出席', val: globalStats.month, color: 'text-indigo-600' },
+               { label: '年度出席', val: globalStats.year, color: 'text-emerald-600' }
+             ].map(s => (
+               <div key={s.label} className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 text-center min-w-[80px]">
+                 <p className="text-[8px] text-slate-400 font-bold uppercase">{s.label}</p>
+                 <p className={`text-xs font-black ${s.color}`}>{s.val}%</p>
+               </div>
+             ))}
+          </div>
+          <div className="text-center">
+             <div className="bg-slate-900 text-white px-8 py-2 rounded-full inline-block shadow-lg border-4 border-white">
+                <p className="text-2xl font-black tabular-nums tracking-tighter leading-none">
+                  {currentTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                </p>
+                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-0.5">
+                  {currentTime.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+             </div>
+          </div>
+          <div className="flex justify-end items-center gap-4">
+            <select value={currentViewMonth} onChange={e => setCurrentViewMonth(parseInt(e.target.value))} className="p-2 bg-slate-100 rounded-xl font-bold text-sm outline-none">
+              <option value="0">1月</option><option value="1">2月</option><option value="2">3月</option>
+            </select>
+            <button onClick={() => setIsLogin(false)} className="flex items-center gap-2 p-2 px-4 bg-rose-50 text-rose-600 rounded-xl font-bold text-sm hover:bg-rose-100 transition shadow-sm"><LogOut size={16} /> 登出</button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-[98%] mx-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-2 h-full bg-blue-600"></div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">員工工號</p>
+            <p className="text-4xl font-black text-slate-900 mb-6 uppercase">{empId}</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => doPunch('上班')} className="bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition">上班打卡</button>
+                <button onClick={() => doPunch('下班')} className="bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-black active:scale-95 transition">下班打卡</button>
+              </div>
+              <button onClick={() => setShowLeaveModal(true)} className="w-full bg-indigo-50 text-indigo-600 py-4 rounded-2xl font-bold border border-indigo-100 hover:bg-indigo-100 transition flex items-center justify-center gap-2"><Calendar size={18} /> 預約請假申請</button>
+            </div>
+            <div className="mt-4 text-[10px] font-bold text-blue-500 bg-blue-50 py-3 rounded-xl min-h-12 flex items-center justify-center px-4 leading-tight">
+              {punchMsg || "系統連線正常"}
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+             <h3 className="font-bold text-[10px] uppercase text-slate-400 mb-4 flex items-center gap-2"><TrendingUp size={12}/> 個人剩餘假別 (雲端同步)</h3>
+             <div className="space-y-5">
+                {["特休", "年假"].map(type => {
+                  const balance = leaveBalances[empId.toUpperCase()]?.[type] || { total: 10, used: 0 };
+                  const remain = balance.total - balance.used;
+                  return (
+                    <div key={type}>
+                      <div className="flex justify-between text-[10px] font-bold mb-1">
+                        <span>{type}</span>
+                        <span className="text-blue-600">剩餘 {remain} / {balance.total} D</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-600 transition-all duration-700" style={{ width: `${(remain / balance.total) * 100}%` }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+             </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+          <div className="p-4 border-b bg-slate-50/50 flex justify-between items-center px-8">
+             <div className="flex gap-2">
+                <input type="text" placeholder="輸入工號搜尋" className="text-xs p-2 border rounded-xl outline-none w-40 bg-white font-bold uppercase" value={searchId} onChange={e => setSearchId(e.target.value)} onKeyPress={e => e.key === 'Enter' && setShowSearchResult(true)} />
+                <button onClick={() => setShowSearchResult(true)} className="text-xs bg-slate-800 text-white px-4 rounded-xl font-bold uppercase hover:bg-black transition">搜尋報表</button>
+             </div>
+             <p className="text-[10px] font-bold text-slate-400">目前檢視：{currentViewMonth+1}月 全體考勤表</p>
+          </div>
+          <div className="overflow-auto flex-1">
+            <table className="w-full text-[10px] text-center border-collapse">
+              <thead className="bg-slate-50 text-slate-400 font-bold sticky top-0 z-20">
+                <tr>
+                  <th className="p-4 bg-white border-b sticky left-0 z-30 min-w-[80px]">員工</th>
+                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => (
+                    <th key={d} className={`p-2 border-b min-w-[50px] ${(currentViewMonth === curM && d === curD) ? 'bg-blue-600 text-white' : ''}`}>
+                      {d}<br />{wNames[new Date(curY, currentViewMonth, d).getDay()]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map(emp => (
+                  <tr key={emp} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-4 font-black sticky left-0 bg-white border-b z-10 border-r">{emp}</td>
+                    {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
+                      const dayData = attendanceData[emp]?.[currentViewMonth]?.[d];
+                      const w = new Date(curY, currentViewMonth, d).getDay();
+                      let content = "—", color = "text-slate-200", tooltip = "";
+                      const isLeave = dayData && !["正常", "遲到", "早退"].includes(dayData.s);
+                      const hasPunch = dayData && ["正常", "遲到", "早退"].includes(dayData.s);
+
+                      if (w === 0 || w === 6) { content = "例假"; color = "text-slate-300 bg-slate-50/50"; }
+                      else if (dayData) {
+                        content = dayData.s;
+                        if (content === "正常") color = "text-slate-900";
+                        else if (content === "遲到") color = "text-amber-500 bg-amber-50/30";
+                        else if (content === "早退") color = "text-rose-500 bg-rose-50/30";
+                        else if (isLeave) color = "text-indigo-600 bg-indigo-50/50 cursor-pointer hover:bg-rose-50 hover:text-rose-600 transition-all border border-indigo-100 rounded-lg";
+                        if (hasPunch) tooltip = `打卡：${dayData.on || '--:--'} ~ ${dayData.off || '--:--'}`;
+                      }
+
+                      return (
+                        <td key={d} onClick={() => { if(isLeave && emp === empId.toUpperCase()) setCancelTarget({emp, m: currentViewMonth, d, type: content}) }} className={`p-1 border-b border-r border-slate-50 font-bold ${color} group relative`}>
+                          <span className="relative z-10">{content}</span>
+                          {hasPunch && (
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-[60] pointer-events-none">
+                              <div className="bg-slate-800 text-white text-[9px] px-2 py-1 rounded shadow-xl whitespace-nowrap">{tooltip}</div>
+                            </div>
+                          )}
+                          {isLeave && emp === empId.toUpperCase() && (
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100"><X size={12} /></div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
