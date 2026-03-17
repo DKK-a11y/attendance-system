@@ -12,6 +12,7 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body>
@@ -20,13 +21,57 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
+        // 使用 Lucide 圖標的 SVG 替代方案
+        const Icon = ({ name }) => {
+            const icons = {
+                clock: <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />,
+                logout: <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />,
+                calendar: <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />,
+                trash: <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            };
+            return (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    {icons[name]}
+                </svg>
+            );
+        };
+
         function App() {
             const [isLogin, setIsLogin] = useState(false);
             const [empId, setEmpId] = useState('');
             const [password, setPassword] = useState('');
-            const [currentTime, setCurrentTime] = useState(new Date());
+            const [currentViewMonth, setCurrentViewMonth] = useState(2); 
+            const [attendanceData, setAttendanceData] = useState({});
             const [punchMsg, setPunchMsg] = useState('');
+            const [searchId, setSearchId] = useState('');
+            const [showSearchResult, setShowSearchResult] = useState(false);
+            const [currentTime, setCurrentTime] = useState(new Date());
+            const [showLeaveModal, setShowLeaveModal] = useState(false);
+            const [leaveForm, setLeaveForm] = useState({ date: '2026-03-12', type: '特休' });
+
             const employees = ["A001", "A002", "A003", "A004", "A005"];
+            const curY = 2026; const curM = 2; const curD = 12;
+
+            // 初始化模擬數據
+            useEffect(() => {
+                const data = {};
+                employees.forEach(emp => {
+                    data[emp] = { 0: {}, 1: {}, 2: {} };
+                    for (let m = 0; m <= 2; m++) {
+                        let days = new Date(curY, m + 1, 0).getDate();
+                        for (let d = 1; d <= days; d++) {
+                            if (m === curM && d >= curD) continue;
+                            const w = new Date(curY, m, d).getDay();
+                            if (w === 0 || w === 6) continue;
+                            let r = Math.random();
+                            if (r < 0.85) data[emp][m][d] = { s: "正常", on: "07:55", off: "16:05" };
+                            else if (r < 0.92) data[emp][m][d] = { s: "遲到", on: "08:15", off: "16:10" };
+                            else data[emp][m][d] = { s: "特休", on: "請假", off: "請假" };
+                        }
+                    }
+                });
+                setAttendanceData(data);
+            }, []);
 
             useEffect(() => {
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -41,71 +86,122 @@
                 }
             };
 
+            const doPunch = (type) => {
+                const t = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+                const id = empId.toUpperCase();
+                setAttendanceData(prev => {
+                    const newData = { ...prev };
+                    if (!newData[id][curM][curD]) newData[id][curM][curD] = { s: "正常", on: "", off: "" };
+                    newData[id][curM][curD] = { ...newData[id][curM][curD], [type === '上班' ? 'on' : 'off']: t };
+                    setPunchMsg(`已紀錄 ${type}：${t}`);
+                    return newData;
+                });
+            };
+
             if (!isLogin) {
                 return (
                     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
                         <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600 text-center">
                             <h2 className="text-3xl font-black text-slate-800 tracking-tight">AI 智慧考勤</h2>
-                            <p className="text-slate-400 mt-2 font-medium">請輸入憑據進入系統</p>
                             <div className="space-y-4 mt-8 text-left">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 ml-2">員工工號</label>
-                                    <input type="text" placeholder="例如: A001" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold mt-1" value={empId} onChange={e => setEmpId(e.target.value)} />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 ml-2">系統密碼</label>
-                                    <input type="password" placeholder="預設 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 mt-1" value={password} onChange={e => setPassword(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} />
-                                </div>
-                                <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl hover:bg-blue-700 transition-all mt-4">
-                                    立即登入
-                                </button>
+                                <input type="text" placeholder="工號 A001-A005" className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold" value={empId} onChange={e => setEmpId(e.target.value)} />
+                                <input type="password" placeholder="密碼 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none" value={password} onChange={e => setPassword(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} />
+                                <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl hover:bg-blue-700 transition-all">進入系統</button>
                             </div>
                         </div>
                     </div>
                 );
             }
 
+            const daysInMonth = new Date(curY, currentViewMonth + 1, 0).getDate();
+            const wNames = ['日', '一', '二', '三', '四', '五', '六'];
+
             return (
-                <div className="min-h-screen flex flex-col items-center justify-center p-6">
-                    <div className="bg-white p-8 rounded-[3rem] shadow-xl max-w-lg w-full text-center border border-slate-100">
-                        <div className="flex justify-between items-center mb-8">
-                            <div className="text-left">
-                                <p className="text-xs font-bold text-slate-400">目前使用者</p>
-                                <p className="text-xl font-black text-blue-600">{empId.toUpperCase()}</p>
+                <div className="min-h-screen bg-slate-50 flex flex-col">
+                    {/* Header */}
+                    <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-blue-600 text-white p-2 rounded-lg"><Icon name="clock" /></div>
+                            <h1 className="text-xl font-black text-slate-800">考勤雲端管理</h1>
+                        </div>
+                        <div className="flex items-center gap-6">
+                            <div className="text-center bg-slate-100 px-4 py-1 rounded-full">
+                                <span className="text-lg font-bold tabular-nums">{currentTime.toLocaleTimeString('zh-TW', { hour12: false })}</span>
                             </div>
-                            <button onClick={() => setIsLogin(false)} className="text-xs bg-slate-100 px-4 py-2 rounded-xl font-bold text-slate-500">登出</button>
-                        </div>
-
-                        <div className="bg-slate-900 text-white p-6 rounded-[2rem] mb-8 shadow-inner">
-                            <p className="text-4xl font-black tabular-nums tracking-tighter">
-                                {currentTime.toLocaleTimeString('zh-TW', { hour12: false })}
-                            </p>
-                            <p className="text-xs font-bold text-blue-400 mt-2">
-                                {currentTime.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}
-                            </p>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <button onClick={() => setPunchMsg('✅ 上班打卡成功！')} className="bg-blue-600 text-white py-6 rounded-3xl font-bold shadow-lg hover:scale-95 transition-transform flex flex-col items-center gap-2">
-                                <i className="fas fa-sign-in-alt text-2xl"></i>
-                                上班打卡
-                            </button>
-                            <button onClick={() => setPunchMsg('✅ 下班打卡成功！')} className="bg-slate-800 text-white py-6 rounded-3xl font-bold shadow-lg hover:scale-95 transition-transform flex flex-col items-center gap-2">
-                                <i className="fas fa-sign-out-alt text-2xl"></i>
-                                下班打卡
+                            <button onClick={() => setIsLogin(false)} className="flex items-center gap-2 text-rose-500 font-bold hover:bg-rose-50 px-3 py-2 rounded-xl transition">
+                                <Icon name="logout" /> 登出
                             </button>
                         </div>
+                    </header>
 
-                        {punchMsg && (
-                            <div className="mt-6 p-4 bg-green-50 text-green-600 rounded-2xl font-bold border border-green-100 animate-bounce">
-                                {punchMsg}
+                    <main className="p-6 grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1">
+                        {/* Sidebar */}
+                        <div className="space-y-6">
+                            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                                <p className="text-xs font-bold text-slate-400 uppercase mb-1">目前登入</p>
+                                <p className="text-3xl font-black text-blue-600">{empId.toUpperCase()}</p>
+                                <div className="mt-6 space-y-3">
+                                    <button onClick={() => doPunch('上班')} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition">上班打卡</button>
+                                    <button onClick={() => doPunch('下班')} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition">下班打卡</button>
+                                </div>
+                                {punchMsg && <div className="mt-4 p-3 bg-green-50 text-green-600 text-xs font-bold rounded-xl text-center border border-green-100">{punchMsg}</div>}
                             </div>
-                        )}
-                        
-                        <p className="mt-8 text-[10px] text-slate-400 font-bold italic">
-                            * 此頁面已成功連接至 Vercel 雲端服務
-                        </p>
-                    </div>
+                            
+                            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                                <h3 className="font-bold text-sm mb-4">快速搜尋報表</h3>
+                                <input type="text" placeholder="輸入工號..." className="w-full p-3 bg-slate-50 rounded-xl mb-2 text-sm outline-none border focus:border-blue-400" value={searchId} onChange={e => setSearchId(e.target.value)} />
+                                <button onClick={() => alert('搜尋功能已啟用，請在下方表格查看')} className="w-full bg-slate-100 text-slate-600 py-3 rounded-xl font-bold text-sm">搜尋員工</button>
+                            </div>
+                        </div>
+
+                        {/* Main Content */}
+                        <div className="lg:col-span-3 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+                            <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
+                                <h2 className="font-black text-slate-700">全體考勤明細表</h2>
+                                <select value={currentViewMonth} onChange={e => setCurrentViewMonth(parseInt(e.target.value))} className="p-2 bg-white border rounded-xl font-bold text-sm outline-none">
+                                    <option value="0">1月統計</option>
+                                    <option value="1">2月統計</option>
+                                    <option value="2">3月統計</option>
+                                </select>
+                            </div>
+                            <div className="overflow-auto flex-1 no-scrollbar">
+                                <table className="w-full text-[11px] text-center border-collapse">
+                                    <thead className="bg-slate-50 text-slate-400 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="p-4 bg-white border-b min-w-[80px] sticky left-0 z-20">工號</th>
+                                            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => (
+                                                <th key={d} className={`p-2 border-b min-w-[45px] ${d === curD && currentViewMonth === curM ? 'bg-blue-600 text-white' : ''}`}>
+                                                    {d}<br/><span className="text-[9px] opacity-70">{wNames[new Date(curY, currentViewMonth, d).getDay()]}</span>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {employees.map(emp => (
+                                            <tr key={emp} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-4 font-black border-b sticky left-0 bg-white z-10 border-r">{emp}</td>
+                                                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
+                                                    const dayData = attendanceData[emp]?.[currentViewMonth]?.[d];
+                                                    const w = new Date(curY, currentViewMonth, d).getDay();
+                                                    let content = "—", color = "text-slate-200";
+                                                    
+                                                    if (w === 0 || w === 6) { content = "假"; color = "text-slate-300 bg-slate-50/50"; }
+                                                    else if (dayData) {
+                                                        content = dayData.s;
+                                                        if (content === "正常") color = "text-slate-900";
+                                                        else if (content === "遲到") color = "text-amber-500 font-bold bg-amber-50";
+                                                        else color = "text-blue-500 font-bold bg-blue-50";
+                                                    }
+                                                    
+                                                    return <td key={d} className={`p-2 border-b border-r border-slate-50 ${color}`}>{content}</td>;
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </main>
                 </div>
             );
         }
