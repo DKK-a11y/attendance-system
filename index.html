@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Clock, Users, Coffee, AlertCircle, Send, CheckCircle2, Calendar, LogIn, LogOut, Search, X, ClipboardList, Trash2, TrendingUp, PieChart, BarChart, AlertTriangle } from 'lucide-react';
+import { 
+  Clock, Users, Coffee, AlertCircle, Send, CheckCircle2, 
+  Calendar, LogIn, LogOut, Search, X, ClipboardList, 
+  Trash2, TrendingUp, PieChart, BarChart, AlertTriangle 
+} from 'lucide-react';
+
+/**
+ * AI 智慧考勤系統 - Vercel 部署優化版
+ * * 核心功能：
+ * 1. 08:00 - 16:00 考勤邏輯
+ * 2. 歷史數據自動修復填充
+ * 3. 個人請假申請與餘額管理
+ * 4. 全局與個人統計報表
+ */
 
 export default function App() {
   const [isLogin, setIsLogin] = useState(false);
@@ -19,7 +32,7 @@ export default function App() {
   });
   const [cancelTarget, setCancelTarget] = useState(null);
 
-  // --- 核心配置：08:00 - 16:00 ---
+  // --- 核心配置 ---
   const WORK_START = "08:00";
   const WORK_END = "16:00";
   const employees = ["A001", "A002", "A003", "A004", "A005"];
@@ -37,30 +50,27 @@ export default function App() {
     "A005": { "特休": { total: 10, used: 1 }, "年假": { total: 5, used: 0 } }
   });
 
-  // 強化數據初始化邏輯，確保不漏掉任何工作日
+  // 數據生成邏輯：確保工作日 100% 填充
   useEffect(() => {
     const data = {};
     employees.forEach(emp => {
       data[emp] = {};
-      // 生成從 1 月到當前月份的所有數據
       for (let m = 0; m <= curM; m++) {
         data[emp][m] = {};
         const daysInMonth = new Date(curY, m + 1, 0).getDate();
         
         for (let d = 1; d <= daysInMonth; d++) {
-          // 如果是當天及以後，則不生成預設數據（等待手動打卡）
           if (m === curM && d >= curD) continue;
 
           const dateObj = new Date(curY, m, d);
           const w = dateObj.getDay();
           
-          // 跳過週末（例假）
           if (w === 0 || w === 6) continue;
           
           let r = Math.random();
-          if (r < 0.90) { // 90% 的機率為出勤
-            const isLate = Math.random() > 0.92; // 約 8% 遲到
-            const isEarlyLeave = Math.random() > 0.95; // 約 5% 早退
+          if (r < 0.90) { 
+            const isLate = Math.random() > 0.92; 
+            const isEarlyLeave = Math.random() > 0.95; 
             
             const onTime = isLate 
               ? `08:${String(Math.floor(Math.random()*15)+1).padStart(2,'0')}` 
@@ -77,8 +87,7 @@ export default function App() {
 
             data[emp][m][d] = { s: status, on: onTime, off: offTime };
           } else { 
-            // 10% 機率請假
-            const randomType = allLeaveTypes[Math.floor(Math.random() * 4)]; // 隨機選前四種常見假別
+            const randomType = allLeaveTypes[Math.floor(Math.random() * 4)]; 
             data[emp][m][d] = { s: randomType, on: "請假", off: "請假" };
           }
         }
@@ -260,7 +269,8 @@ export default function App() {
   const wNames = ['日', '一', '二', '三', '四', '五', '六'];
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 overflow-x-hidden">
+      {/* 搜尋結果彈窗 */}
       {showSearchResult && searchStats && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[150] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-2xl rounded-[3rem] p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto">
@@ -291,6 +301,7 @@ export default function App() {
         </div>
       )}
 
+      {/* 請假彈窗 */}
       {showLeaveModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
@@ -308,6 +319,7 @@ export default function App() {
         </div>
       )}
 
+      {/* 取消請假彈窗 */}
       {cancelTarget && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4 text-center">
           <div className="bg-white w-full max-w-xs rounded-[2rem] p-8 shadow-2xl">
@@ -318,6 +330,7 @@ export default function App() {
         </div>
       )}
 
+      {/* 頂部導航欄 */}
       <header className="bg-white border-b sticky top-0 z-50 px-8 py-4 shadow-sm">
         <div className="max-w-7xl mx-auto grid grid-cols-3 items-center">
           <div className="flex gap-3">
@@ -343,7 +356,9 @@ export default function App() {
         </div>
       </header>
 
+      {/* 主要內容區 */}
       <main className="max-w-[98%] mx-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* 左側操作欄 */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-2 h-full bg-blue-600"></div>
@@ -360,6 +375,7 @@ export default function App() {
               {punchMsg || `考勤區間：${WORK_START} - ${WORK_END}`}
             </div>
           </div>
+          {/* 假別餘額 */}
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
              <h3 className="font-bold text-[10px] uppercase text-slate-400 mb-4 flex items-center gap-2"><TrendingUp size={12}/> 個人假別餘額</h3>
              <div className="space-y-5">
@@ -376,6 +392,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* 右側表格區 */}
         <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
           <div className="p-4 border-b bg-slate-50/50 flex justify-between items-center px-8">
              <div className="flex gap-2">
@@ -417,7 +434,6 @@ export default function App() {
                         else color = "text-indigo-600 bg-indigo-50/50 cursor-pointer border rounded-lg";
                         if (dayData.on) tooltip = `打卡：${dayData.on} ~ ${dayData.off || '--:--'}`;
                       } else if (isPast) {
-                        // 如果是工作日且過去日期卻沒數據，補顯「曠職」或橫線
                         content = "未紀錄"; color = "text-rose-300";
                       }
 
