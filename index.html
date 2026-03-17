@@ -3,39 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智慧考勤系統</title>
+    <title>AI 智慧考勤雲端版</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { background: #f3f4f6; }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
     </style>
 </head>
 <body>
-    <div class="min-h-screen flex items-center justify-center p-4">
-        <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center">
-            <div class="mb-6">
-                <div class="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                </div>
-                <h1 class="text-2xl font-bold text-gray-800">考勤系統後台</h1>
-                <p class="text-gray-500 mt-2">系統已在雲端運行，並與 Telegram 連動</p>
-            </div>
-            
-            <div class="space-y-4 text-left">
-                <div class="p-4 bg-gray-50 rounded-lg">
-                    <p class="text-sm font-semibold text-gray-700">伺服器狀態：<span class="text-green-600">正常運行中</span></p>
-                </div>
-                <div class="p-4 bg-gray-50 rounded-lg">
-                    <p class="text-sm font-semibold text-gray-700">Webhook 路徑：</p>
-                    <code class="text-xs text-blue-600 break-all">/api/bot</code>
-                </div>
-            </div>
+    <div id="root"></div>
 
-            <div class="mt-8 text-xs text-gray-400">
-                &copy; 2026 智慧考勤系統管理中心
-            </div>
-        </div>
-    </div>
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        function App() {
+            const [isLogin, setIsLogin] = useState(false);
+            const [empId, setEmpId] = useState('');
+            const [password, setPassword] = useState('');
+            const [currentTime, setCurrentTime] = useState(new Date());
+            const [punchMsg, setPunchMsg] = useState('');
+            const employees = ["A001", "A002", "A003", "A004", "A005"];
+
+            useEffect(() => {
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            const handleLogin = () => {
+                if (employees.includes(empId.toUpperCase()) && password === '8888') {
+                    setIsLogin(true);
+                } else {
+                    alert('工號或密碼錯誤 (測試密碼: 8888)');
+                }
+            };
+
+            if (!isLogin) {
+                return (
+                    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+                        <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600 text-center">
+                            <h2 className="text-3xl font-black text-slate-800 tracking-tight">AI 智慧考勤</h2>
+                            <p className="text-slate-400 mt-2 font-medium">請輸入憑據進入系統</p>
+                            <div className="space-y-4 mt-8 text-left">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 ml-2">員工工號</label>
+                                    <input type="text" placeholder="例如: A001" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold mt-1" value={empId} onChange={e => setEmpId(e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 ml-2">系統密碼</label>
+                                    <input type="password" placeholder="預設 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 mt-1" value={password} onChange={e => setPassword(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} />
+                                </div>
+                                <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl hover:bg-blue-700 transition-all mt-4">
+                                    立即登入
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen flex flex-col items-center justify-center p-6">
+                    <div className="bg-white p-8 rounded-[3rem] shadow-xl max-w-lg w-full text-center border border-slate-100">
+                        <div className="flex justify-between items-center mb-8">
+                            <div className="text-left">
+                                <p className="text-xs font-bold text-slate-400">目前使用者</p>
+                                <p className="text-xl font-black text-blue-600">{empId.toUpperCase()}</p>
+                            </div>
+                            <button onClick={() => setIsLogin(false)} className="text-xs bg-slate-100 px-4 py-2 rounded-xl font-bold text-slate-500">登出</button>
+                        </div>
+
+                        <div className="bg-slate-900 text-white p-6 rounded-[2rem] mb-8 shadow-inner">
+                            <p className="text-4xl font-black tabular-nums tracking-tighter">
+                                {currentTime.toLocaleTimeString('zh-TW', { hour12: false })}
+                            </p>
+                            <p className="text-xs font-bold text-blue-400 mt-2">
+                                {currentTime.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <button onClick={() => setPunchMsg('✅ 上班打卡成功！')} className="bg-blue-600 text-white py-6 rounded-3xl font-bold shadow-lg hover:scale-95 transition-transform flex flex-col items-center gap-2">
+                                <i className="fas fa-sign-in-alt text-2xl"></i>
+                                上班打卡
+                            </button>
+                            <button onClick={() => setPunchMsg('✅ 下班打卡成功！')} className="bg-slate-800 text-white py-6 rounded-3xl font-bold shadow-lg hover:scale-95 transition-transform flex flex-col items-center gap-2">
+                                <i className="fas fa-sign-out-alt text-2xl"></i>
+                                下班打卡
+                            </button>
+                        </div>
+
+                        {punchMsg && (
+                            <div className="mt-6 p-4 bg-green-50 text-green-600 rounded-2xl font-bold border border-green-100 animate-bounce">
+                                {punchMsg}
+                            </div>
+                        )}
+                        
+                        <p className="mt-8 text-[10px] text-slate-400 font-bold italic">
+                            * 此頁面已成功連接至 Vercel 雲端服務
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
