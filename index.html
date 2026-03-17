@@ -6,15 +6,21 @@ import {
 } from 'lucide-react';
 
 /**
- * AI 智慧考勤系統 - Vercel 部署優化版
- * * 核心功能：
- * 1. 08:00 - 16:00 考勤邏輯
- * 2. 歷史數據自動修復填充
- * 3. 個人請假申請與餘額管理
- * 4. 全局與個人統計報表
+ * AI 智慧考勤系統 - Vercel 樣式修復版
+ * 使用 Tailwind Play CDN 確保在任何環境下都能正確顯示 UI 介面
  */
 
 export default function App() {
+  // 注入 Tailwind CSS CDN 確保樣式生效
+  useEffect(() => {
+    if (!document.getElementById('tailwind-cdn')) {
+      const script = document.createElement('script');
+      script.id = 'tailwind-cdn';
+      script.src = 'https://cdn.tailwindcss.com';
+      document.head.appendChild(script);
+    }
+  }, []);
+
   const [isLogin, setIsLogin] = useState(false);
   const [empId, setEmpId] = useState('');
   const [password, setPassword] = useState('');
@@ -61,21 +67,17 @@ export default function App() {
         
         for (let d = 1; d <= daysInMonth; d++) {
           if (m === curM && d >= curD) continue;
-
           const dateObj = new Date(curY, m, d);
           const w = dateObj.getDay();
-          
           if (w === 0 || w === 6) continue;
           
           let r = Math.random();
           if (r < 0.90) { 
             const isLate = Math.random() > 0.92; 
             const isEarlyLeave = Math.random() > 0.95; 
-            
             const onTime = isLate 
               ? `08:${String(Math.floor(Math.random()*15)+1).padStart(2,'0')}` 
               : `07:${String(Math.floor(Math.random()*15)+45).padStart(2,'0')}`;
-            
             const offTime = isEarlyLeave
               ? `15:${String(Math.floor(Math.random()*20)+40).padStart(2,'0')}`
               : `16:${String(Math.floor(Math.random()*15)).padStart(2,'0')}`;
@@ -84,7 +86,6 @@ export default function App() {
             if (isLate && isEarlyLeave) status = "遲到/早退";
             else if (isLate) status = "遲到";
             else if (isEarlyLeave) status = "早退";
-
             data[emp][m][d] = { s: status, on: onTime, off: offTime };
           } else { 
             const randomType = allLeaveTypes[Math.floor(Math.random() * 4)]; 
@@ -123,7 +124,6 @@ export default function App() {
       const newData = { ...prev };
       if (!newData[id]) newData[id] = {};
       if (!newData[id][curM]) newData[id][curM] = {};
-      
       let dayData = newData[id][curM][curD] || { s: "正常", on: "", off: "" };
 
       if (type === '上班') {
@@ -136,7 +136,6 @@ export default function App() {
           dayData.s = (currentStatus === "遲到") ? "遲到/早退" : "早退";
         }
       }
-
       newData[id][curM][curD] = dayData;
       setPunchMsg(`已紀錄 ${type}：${t} (${dayData.s})`);
       return newData;
@@ -189,17 +188,14 @@ export default function App() {
 
   const globalStats = useMemo(() => {
     let todayPresent = 0, totalWorkDaysInMonth = 0, monthPresent = 0, yearTotal = 0, yearPresent = 0;
-    
     employees.forEach(emp => {
       if (attendanceData[emp]?.[curM]?.[curD]) todayPresent++;
-      
       for (let m = 0; m <= curM; m++) {
         const days = new Date(curY, m + 1, 0).getDate();
         for (let d = 1; d <= days; d++) {
           const w = new Date(curY, m, d).getDay();
           if (w === 0 || w === 6) continue; 
           if (m === curM && d > curD) break;
-
           yearTotal++;
           if (attendanceData[emp]?.[m]?.[d]) {
             yearPresent++;
@@ -209,7 +205,6 @@ export default function App() {
         }
       }
     });
-
     return {
       today: (todayPresent / employees.length * 100).toFixed(1),
       month: (monthPresent / Math.max(1, totalWorkDaysInMonth) * 100).toFixed(1),
@@ -221,7 +216,6 @@ export default function App() {
     const id = searchId.toUpperCase();
     if (!employees.includes(id)) return null;
     const stats = { year: 0, yearTotal: 0, months: {}, yearlyLeaves: {}, yearlyExceptions: { "遲到": 0, "早退": 0, "遲到/早退": 0 }, monthlyLeaves: {}, monthlyExceptions: {} };
-    
     for (let m = 0; m <= curM; m++) {
       stats.months[m] = { present: 0, total: 0 };
       stats.monthlyLeaves[m] = {};
@@ -230,7 +224,6 @@ export default function App() {
       for (let d = 1; d <= days; d++) {
         const w = new Date(curY, m, d).getDay();
         if (w === 0 || w === 6 || (m === curM && d > curD)) continue;
-        
         stats.yearTotal++; 
         stats.months[m].total++;
         const day = attendanceData[id]?.[m]?.[d];
@@ -399,7 +392,7 @@ export default function App() {
                 <input type="text" placeholder="工號 A001-A005" className="text-xs p-2 border rounded-xl outline-none w-40 bg-white font-bold" value={searchId} onChange={e => setSearchId(e.target.value)} onKeyPress={e => e.key === 'Enter' && setShowSearchResult(true)} />
                 <button onClick={() => setShowSearchResult(true)} className="text-xs bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-black transition">搜尋報表</button>
              </div>
-             <p className="text-[10px] font-bold text-slate-400">系統提示：歷史數據已根據 08:00 - 16:00 工時自動填充。</p>
+             <p className="text-[10px] font-bold text-slate-400">系統提示：樣式已修復並強制注入。</p>
           </div>
           <div className="overflow-auto flex-1">
             <table className="w-full text-[10px] text-center border-collapse">
@@ -421,7 +414,6 @@ export default function App() {
                       const dayData = attendanceData[emp]?.[currentViewMonth]?.[d];
                       const w = new Date(curY, currentViewMonth, d).getDay();
                       let content = "—", color = "text-slate-200", tooltip = "";
-                      
                       const isWorkDay = w !== 0 && w !== 6;
                       const isPast = (currentViewMonth < curM) || (currentViewMonth === curM && d < curD);
 
