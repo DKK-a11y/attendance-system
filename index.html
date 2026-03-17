@@ -5,6 +5,13 @@ import {
   Trash2, TrendingUp, PieChart, BarChart, AlertTriangle 
 } from 'lucide-react';
 
+/**
+ * 注意：若在 Vercel 顯示代碼而不是畫面，請確保：
+ * 1. 你是建立一個 React 專案（如：npm create vite@latest）
+ * 2. 此代碼放在 src/App.jsx
+ * 3. 確保安裝了 lucide-react 套件
+ */
+
 // --- 模擬數據生成器 ---
 const EMPLOYEES = ["A001", "A002", "A003", "A004", "A005"];
 const LEAVE_TYPES = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
@@ -157,11 +164,17 @@ export default function App() {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600 text-center">
           <h2 className="text-3xl font-black text-slate-800 tracking-tight">AI 考勤模擬系統</h2>
-          <p className="text-slate-400 mt-2 font-bold text-sm">本地測試模式 (不連接資料庫)</p>
+          <div className="bg-amber-50 text-amber-700 text-[10px] font-bold py-1 px-3 rounded-full inline-block mt-2">模擬數據模式</div>
           <div className="space-y-4 mt-8">
-            <input type="text" placeholder="工號 A001" className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold" value={empId} onChange={e => setEmpId(e.target.value)} />
-            <input type="password" placeholder="密碼 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none" value={password} onChange={e => setPassword(e.target.value)} />
-            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl">進入系統</button>
+            <div className="text-left">
+              <label className="text-[10px] font-bold text-slate-400 ml-2">測試工號 (A001 - A005)</label>
+              <input type="text" placeholder="工號 A001" className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold mt-1" value={empId} onChange={e => setEmpId(e.target.value)} />
+            </div>
+            <div className="text-left">
+              <label className="text-[10px] font-bold text-slate-400 ml-2">密碼 (預設 8888)</label>
+              <input type="password" placeholder="密碼 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none mt-1" value={password} onChange={e => setPassword(e.target.value)} />
+            </div>
+            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl transition-transform active:scale-95">進入系統</button>
             {punchMsg && <p className="text-xs text-rose-500 font-bold mt-2">{punchMsg}</p>}
           </div>
         </div>
@@ -178,20 +191,25 @@ export default function App() {
       {showSearchResult && searchStats && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[150] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl relative">
-            <button onClick={() => setShowSearchResult(false)} className="absolute top-8 right-8 p-3 bg-slate-100 rounded-full"><X size={20}/></button>
+            <button onClick={() => setShowSearchResult(false)} className="absolute top-8 right-8 p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={20}/></button>
             <div className="flex items-center gap-4 mb-8">
               <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl">{searchId.toUpperCase()}</div>
-              <div><h3 className="text-2xl font-black text-slate-800">員工報表</h3><p className="text-slate-400 font-bold">歷史模擬數據</p></div>
+              <div><h3 className="text-2xl font-black text-slate-800">員工報表</h3><p className="text-slate-400 font-bold text-xs">歷史模擬數據彙整</p></div>
             </div>
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><p className="text-[10px] font-bold text-blue-400">累計出勤</p><p className="text-2xl font-black text-blue-600">{searchStats.presentDays} D</p></div>
-              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100"><p className="text-[10px] font-bold text-amber-500">遲到次數</p><p className="text-2xl font-black text-amber-600">{searchStats.exceptions["遲到"]}</p></div>
+              <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">累計出勤</p><p className="text-2xl font-black text-blue-600">{searchStats.presentDays} D</p></div>
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100"><p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">遲到次數</p><p className="text-2xl font-black text-amber-600">{searchStats.exceptions["遲到"]}</p></div>
             </div>
             <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-400 border-b pb-2">假別統計</h4>
-              {Object.entries(searchStats.leaves).map(([type, count]) => (
-                <div key={type} className="flex justify-between text-sm py-1"><span>{type}</span><span>{count} 天</span></div>
-              ))}
+              <h4 className="text-[10px] font-black text-slate-400 border-b pb-2 uppercase tracking-widest">假別詳細統計</h4>
+              <div className="max-h-40 overflow-auto pr-2">
+                {Object.entries(searchStats.leaves).length > 0 ? Object.entries(searchStats.leaves).map(([type, count]) => (
+                  <div key={type} className="flex justify-between text-sm py-2 border-b border-slate-50 last:border-0 font-bold">
+                    <span className="text-slate-600">{type}</span>
+                    <span className="text-indigo-600">{count} 天</span>
+                  </div>
+                )) : <p className="text-center py-4 text-slate-300 text-xs font-bold">目前無請假紀錄</p>}
+              </div>
             </div>
           </div>
         </div>
@@ -201,16 +219,22 @@ export default function App() {
       {showLeaveModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
-            <h3 className="text-xl font-black mb-6">請假申請 (模擬)</h3>
+            <h3 className="text-xl font-black mb-6 flex items-center gap-2"><Calendar className="text-blue-600" size={24}/> 請假申請 (模擬)</h3>
             <div className="space-y-4">
-              <input type="date" value={leaveForm.date} onChange={e => setLeaveForm({...leaveForm, date: e.target.value})} className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none" />
-              <div className="grid grid-cols-2 gap-2">
-                {LEAVE_TYPES.slice(0, 4).map(type => (
-                  <button key={type} onClick={() => setLeaveForm({...leaveForm, type})} className={`p-3 text-xs font-bold rounded-xl border ${leaveForm.type === type ? 'bg-blue-600 text-white' : 'bg-white'}`}>{type}</button>
-                ))}
+              <div className="text-left">
+                <label className="text-[10px] font-bold text-slate-400 ml-2">選擇日期</label>
+                <input type="date" value={leaveForm.date} onChange={e => setLeaveForm({...leaveForm, date: e.target.value})} className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none mt-1" />
               </div>
-              <button onClick={submitLeave} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg mt-4">確認提交</button>
-              <button onClick={() => setShowLeaveModal(false)} className="w-full py-2 text-slate-400 font-bold">取消</button>
+              <div className="text-left">
+                <label className="text-[10px] font-bold text-slate-400 ml-2">假別類型</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  {LEAVE_TYPES.slice(0, 4).map(type => (
+                    <button key={type} onClick={() => setLeaveForm({...leaveForm, type})} className={`p-3 text-xs font-bold rounded-xl border transition-all ${leaveForm.type === type ? 'bg-blue-600 text-white border-blue-600 shadow-md scale-105' : 'bg-white text-slate-600 border-slate-200'}`}>{type}</button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={submitLeave} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg mt-4 transition-transform active:scale-95">確認提交</button>
+              <button onClick={() => setShowLeaveModal(false)} className="w-full py-2 text-slate-400 font-bold text-sm">取消返回</button>
             </div>
           </div>
         </div>
@@ -219,46 +243,53 @@ export default function App() {
       <header className="bg-white border-b sticky top-0 z-50 px-8 py-4 shadow-sm flex justify-between items-center">
         <div className="flex gap-3">
           <div className="bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 text-center">
-            <p className="text-[8px] text-blue-400 font-bold">模擬出席率</p>
+            <p className="text-[8px] text-blue-400 font-bold uppercase tracking-tighter">今日出席率</p>
             <p className="text-xs font-black text-blue-600">{globalStats.today}%</p>
           </div>
         </div>
         <div className="bg-slate-900 text-white px-8 py-2 rounded-full shadow-lg border-4 border-white text-center">
-          <p className="text-xl font-black tabular-nums">{currentTime.toLocaleTimeString('en-GB')}</p>
-          <p className="text-[9px] font-bold text-blue-400 tracking-widest uppercase">Mock Data Mode</p>
+          <p className="text-xl font-black tabular-nums tracking-wider">{currentTime.toLocaleTimeString('en-GB')}</p>
+          <p className="text-[9px] font-bold text-blue-400 tracking-widest uppercase flex items-center justify-center gap-1"><Clock size={10}/> Local Preview Mode</p>
         </div>
         <div className="flex items-center gap-4">
-          <select value={currentViewMonth} onChange={e => setCurrentViewMonth(parseInt(e.target.value))} className="p-2 bg-slate-100 rounded-xl font-bold text-sm">
-            {[...Array(12).keys()].map(m => <option key={m} value={m}>{m+1}月統計</option>)}
+          <select value={currentViewMonth} onChange={e => setCurrentViewMonth(parseInt(e.target.value))} className="p-2 bg-slate-100 border-none rounded-xl font-bold text-sm outline-none cursor-pointer">
+            {[...Array(12).keys()].map(m => <option key={m} value={m}>{m+1}月 統計看板</option>)}
           </select>
-          <button onClick={() => setIsLogin(false)} className="p-2 px-4 bg-rose-50 text-rose-600 rounded-xl font-bold text-sm border border-rose-100">登出</button>
+          <button onClick={() => setIsLogin(false)} className="p-2 px-4 bg-rose-50 text-rose-600 rounded-xl font-bold text-sm border border-rose-100 transition-colors hover:bg-rose-100">登出</button>
         </div>
       </header>
 
       <main className="max-w-[98%] mx-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-2 h-full bg-blue-600"></div>
-            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">工號</p>
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-2 h-full bg-blue-600 transition-all group-hover:w-3"></div>
+            <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">員工工號</p>
             <p className="text-4xl font-black text-slate-900 mb-6">{empId.toUpperCase()}</p>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => doPunch('上班')} className="bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg">上班</button>
-                <button onClick={() => doPunch('下班')} className="bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg">下班</button>
+                <button onClick={() => doPunch('上班')} className="bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg transition-transform active:scale-95">上班</button>
+                <button onClick={() => doPunch('下班')} className="bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg transition-transform active:scale-95">下班</button>
               </div>
-              <button onClick={() => setShowLeaveModal(true)} className="w-full bg-indigo-50 text-indigo-600 py-4 rounded-2xl font-bold border border-indigo-100 flex items-center justify-center gap-2"><Calendar size={18}/> 模擬請假</button>
+              <button onClick={() => setShowLeaveModal(true)} className="w-full bg-indigo-50 text-indigo-600 py-4 rounded-2xl font-bold border border-indigo-100 flex items-center justify-center gap-2 transition-colors hover:bg-indigo-100"><Calendar size={18}/> 模擬請假</button>
             </div>
-            <p className="mt-4 text-[10px] font-bold text-blue-500 bg-blue-50 py-3 rounded-xl">{punchMsg || "系統正常運作中"}</p>
+            <div className="mt-4 flex flex-col items-center">
+               <span className="text-[10px] font-bold text-blue-500 bg-blue-50 py-3 px-4 rounded-xl w-full inline-block border border-blue-100">
+                {punchMsg || "系統就緒 (已載入模擬資料)"}
+               </span>
+            </div>
           </div>
 
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-             <h3 className="font-bold text-[10px] uppercase text-slate-400 mb-4 flex items-center gap-2"><TrendingUp size={12}/> 個人剩餘假別 (模擬)</h3>
+             <h3 className="font-bold text-[10px] uppercase text-slate-400 mb-4 flex items-center gap-2 tracking-widest"><TrendingUp size={12}/> 個人假別額度</h3>
              <div className="space-y-5">
                 {Object.entries(leaveBalances[empId.toUpperCase()] || {}).map(([type, leave]) => (
                   <div key={type}>
-                    <div className="flex justify-between text-[10px] font-bold mb-1"><span>{type}</span><span className="text-blue-600">剩餘 {leave.total - leave.used} D</span></div>
+                    <div className="flex justify-between text-[10px] font-bold mb-1 uppercase">
+                      <span>{type}</span>
+                      <span className="text-blue-600">剩餘 {leave.total - leave.used} D</span>
+                    </div>
                     <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-600 transition-all duration-700" style={{ width: `${((leave.total - leave.used) / leave.total) * 100}%` }}></div>
+                      <div className="h-full bg-blue-600 transition-all duration-1000" style={{ width: `${((leave.total - leave.used) / leave.total) * 100}%` }}></div>
                     </div>
                   </div>
                 ))}
@@ -266,50 +297,61 @@ export default function App() {
           </div>
         </div>
 
-        <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+        <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
           <div className="p-4 border-b bg-slate-50/50 flex justify-between items-center px-8">
              <div className="flex gap-2">
-                <input type="text" placeholder="查詢工號" className="text-xs p-2 border rounded-xl w-32 font-bold outline-none" value={searchId} onChange={e => setSearchId(e.target.value)} />
-                <button onClick={() => setShowSearchResult(true)} className="text-xs bg-slate-800 text-white px-4 rounded-xl font-bold">搜尋</button>
+                <input type="text" placeholder="查詢工號" className="text-xs p-2 border border-slate-200 rounded-xl w-32 font-bold outline-none focus:border-blue-300" value={searchId} onChange={e => setSearchId(e.target.value)} />
+                <button onClick={() => setShowSearchResult(true)} className="text-xs bg-slate-800 text-white px-5 rounded-xl font-bold hover:bg-slate-700 transition-colors">搜尋</button>
              </div>
-             <p className="text-[10px] font-bold text-slate-400">當前顯示為隨機生成的模擬數據</p>
+             <div className="flex items-center gap-2">
+               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">模擬數據即時預覽</p>
+             </div>
           </div>
           <div className="overflow-auto flex-1">
             <table className="w-full text-[10px] text-center border-collapse">
               <thead className="bg-slate-50 text-slate-400 font-bold sticky top-0 z-20">
                 <tr>
-                  <th className="p-4 bg-white border-b sticky left-0 z-30 min-w-[80px]">工號</th>
+                  <th className="p-4 bg-white border-b sticky left-0 z-30 min-w-[80px] shadow-[2px_0_5px_rgba(0,0,0,0.02)]">工號</th>
                   {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => (
-                    <th key={d} className={`p-2 border-b min-w-[50px] ${(currentViewMonth === curM && d === curD) ? 'bg-blue-600 text-white' : ''}`}>
-                      {d}<br />{wNames[new Date(curY, currentViewMonth, d).getDay()]}
+                    <th key={d} className={`p-2 border-b min-w-[50px] transition-colors ${(currentViewMonth === curM && d === curD) ? 'bg-blue-600 text-white' : ''}`}>
+                      <span className="opacity-60">{wNames[new Date(curY, currentViewMonth, d).getDay()]}</span><br />
+                      <span className="text-sm font-black">{d}</span>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {EMPLOYEES.map(emp => (
-                  <tr key={emp} className="hover:bg-slate-50/50">
-                    <td className="p-4 font-black sticky left-0 bg-white border-b z-10 border-r">{emp}</td>
+                  <tr key={emp} className="hover:bg-blue-50/20 transition-colors group">
+                    <td className="p-4 font-black sticky left-0 bg-white border-b z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)] group-hover:bg-blue-50/30 transition-colors">{emp}</td>
                     {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
                       const dayData = attendanceData[emp]?.[currentViewMonth]?.[d];
                       const w = new Date(curY, currentViewMonth, d).getDay();
                       let content = "—", color = "text-slate-200", tooltip = "";
 
-                      if (w === 0 || w === 6) { content = "例假"; color = "text-slate-300 bg-slate-50/30"; }
-                      else if (dayData) {
+                      if (w === 0 || w === 6) { 
+                        content = "例假"; 
+                        color = "text-slate-300 bg-slate-50/50"; 
+                      } else if (dayData) {
                         content = dayData.s;
                         if (content === "正常") color = "text-slate-900";
-                        else if (content === "遲到") color = "text-amber-500 bg-amber-50/30";
-                        else color = "text-indigo-600 bg-indigo-50/50 rounded-lg";
-                        if (["正常", "遲到"].includes(content)) tooltip = `${dayData.on} / ${dayData.off}`;
+                        else if (content === "遲到") color = "text-amber-600 bg-amber-50 font-black rounded-lg";
+                        else color = "text-indigo-600 bg-indigo-50 font-black rounded-lg";
+                        
+                        if (["正常", "遲到"].includes(content)) {
+                          tooltip = `${dayData.on || '--'} / ${dayData.off || '--'}`;
+                        }
                       }
 
                       return (
-                        <td key={d} className={`p-1 border-b border-r border-slate-50 font-bold ${color} group relative`}>
-                          {content}
+                        <td key={d} className={`p-1 border-b border-r border-slate-50 font-bold ${color} group/cell relative`}>
+                          <div className="py-2">{content}</div>
                           {tooltip && (
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
-                              <div className="bg-slate-800 text-white text-[9px] px-2 py-1 rounded shadow-xl">{tooltip}</div>
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/cell:block z-50 pointer-events-none">
+                              <div className="bg-slate-800 text-white text-[9px] px-2 py-1 rounded shadow-xl whitespace-nowrap">
+                                <span className="text-blue-300">時間:</span> {tooltip}
+                              </div>
                             </div>
                           )}
                         </td>
@@ -319,6 +361,12 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="p-4 bg-slate-50 border-t flex justify-center gap-6">
+             <div className="flex items-center gap-2 text-[9px] font-bold text-slate-400"><div className="w-2 h-2 rounded bg-slate-200"></div> 未打卡</div>
+             <div className="flex items-center gap-2 text-[9px] font-bold text-slate-600"><div className="w-2 h-2 rounded bg-slate-900"></div> 正常出勤</div>
+             <div className="flex items-center gap-2 text-[9px] font-bold text-amber-600"><div className="w-2 h-2 rounded bg-amber-100"></div> 異常/遲到</div>
+             <div className="flex items-center gap-2 text-[9px] font-bold text-indigo-600"><div className="w-2 h-2 rounded bg-indigo-100"></div> 請假/特休</div>
           </div>
         </div>
       </main>
