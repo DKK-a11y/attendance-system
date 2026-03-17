@@ -19,12 +19,20 @@ import {
   Trash2, TrendingUp, PieChart, BarChart, AlertTriangle 
 } from 'lucide-react';
 
-// --- Firebase 配置 (使用系統環境變量) ---
-const firebaseConfig = JSON.parse(__firebase_config);
+// --- Firebase 配置 (針對 GitHub/Vercel 環境優化) ---
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+};
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'enterprise-attendance-v2';
+const appId = process.env.NEXT_PUBLIC_APP_ID || 'enterprise-attendance-v2';
 
 // 員工清單與初始配置
 const EMPLOYEES = ["A001", "A002", "A003", "A004", "A005"];
@@ -37,7 +45,7 @@ const INITIAL_BALANCES = {
 };
 const LEAVE_TYPES = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
 
-function AttendanceApp() {
+export default function App() {
   // --- 狀態定義 ---
   const [isLogin, setIsLogin] = useState(false);
   const [user, setUser] = useState(null);
@@ -62,20 +70,18 @@ function AttendanceApp() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        // 在 Vercel 環境中通常直接使用匿名登入或自定義 Token
+        await signInAnonymously(auth);
       } catch (err) {
         console.error("Auth Failed", err);
       }
     };
     initAuth();
-    return onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
   }, []);
 
-  // 2. 監聽 Firestore 數據
+  // 2. 監聽 Firestore 數據 (保持同步功能)
   useEffect(() => {
     if (!user) return;
 
@@ -186,7 +192,7 @@ function AttendanceApp() {
       });
     });
     return { today: (todayP / EMPLOYEES.length * 100).toFixed(1), year: yP };
-  }, [attendanceData]);
+  }, [attendanceData, curM, curD]);
 
   const searchStats = useMemo(() => {
     const id = searchId.toUpperCase();
@@ -213,7 +219,7 @@ function AttendanceApp() {
             <input type="text" placeholder="工號 A001-A005" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={empId} onChange={e => setEmpId(e.target.value)} />
             <input type="password" placeholder="密碼 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} />
             <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl hover:bg-blue-700 transition">進入系統</button>
-            {punchMsg && <p className="text-xs text-rose-500 font-bold">{punchMsg}</p>}
+            {punchMsg && <p className="text-xs text-rose-500 font-bold mt-2">{punchMsg}</p>}
           </div>
         </div>
       </div>
@@ -398,7 +404,3 @@ function AttendanceApp() {
     </div>
   );
 }
-
-// 使用標準的 React App 導出結構
-const App = () => <AttendanceApp />;
-export default App;
