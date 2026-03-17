@@ -134,12 +134,13 @@
 
         let attendanceData = {};
 
+        // 調整假別：特休(10)與年假(5)
         const leaveConfig = {
-            "A001": { "特休": {total: 10, used: 2}, "病假": {total: 30, used: 1}, "事假": {total: 7, used: 0} },
-            "A002": { "特休": {total: 7, used: 5}, "病假": {total: 30, used: 4}, "事假": {total: 7, used: 2} },
-            "A003": { "特休": {total: 14, used: 0}, "病假": {total: 30, used: 0}, "事假": {total: 7, used: 1} },
-            "A004": { "特休": {total: 7, used: 1}, "病假": {total: 30, used: 10}, "事假": {total: 7, used: 0} },
-            "A005": { "特休": {total: 3, used: 0}, "病假": {total: 30, used: 2}, "事假": {total: 7, used: 5} }
+            "A001": { "特休": {total: 10, used: 2}, "年假": {total: 5, used: 1} },
+            "A002": { "特休": {total: 10, used: 5}, "年假": {total: 5, used: 0} },
+            "A003": { "特休": {total: 10, used: 0}, "年假": {total: 5, used: 2} },
+            "A004": { "特休": {total: 10, used: 8}, "年假": {total: 5, used: 4} },
+            "A005": { "特休": {total: 10, used: 1}, "年假": {total: 5, used: 3} }
         };
 
         // 動態生成月份選單 (前三個月)
@@ -159,7 +160,6 @@
         function generateData() {
             employees.forEach(emp => {
                 attendanceData[emp] = {};
-                // 生成當前年份及前三個月的資料
                 for (let i = 0; i < 3; i++) {
                     let dateObj = new Date(curY, curM - i, 1);
                     let m = dateObj.getMonth();
@@ -168,17 +168,23 @@
                     let daysInMonth = new Date(curY, m + 1, 0).getDate();
                     
                     for (let d = 1; d <= daysInMonth; d++) {
-                        // 核心邏輯：如果是當月，只生成到「昨天」 (d < curD)
                         if (m === curM && d >= curD) continue;
 
                         const w = new Date(curY, m, d).getDay();
                         if (w === 0 || w === 6) continue; // 跳過週末
 
                         let r = Math.random();
-                        if (r < 0.82) attendanceData[emp][m][d] = { s: "正常", on: "08:52", off: "18:05" };
-                        else if (r < 0.88) attendanceData[emp][m][d] = { s: "遲到", on: "09:15", off: "18:10" };
-                        else if (r < 0.94) attendanceData[emp][m][d] = { s: "早退", on: "08:50", off: "16:40" };
-                        else attendanceData[emp][m][d] = { s: "特休", on: "請假", off: "請假" };
+                        if (r < 0.85) {
+                            attendanceData[emp][m][d] = { s: "正常", on: "08:52", off: "18:05" };
+                        } else if (r < 0.90) {
+                            attendanceData[emp][m][d] = { s: "遲到", on: "09:15", off: "18:10" };
+                        } else if (r < 0.95) {
+                            attendanceData[emp][m][d] = { s: "早退", on: "08:50", off: "16:40" };
+                        } else {
+                            // 隨機分配特休或年假
+                            const leaveType = Math.random() > 0.5 ? "特休" : "年假";
+                            attendanceData[emp][m][d] = { s: leaveType, on: "請假", off: "請假" };
+                        }
                     }
                 }
             });
@@ -202,10 +208,12 @@
         }
 
         function renderLeaveBalance(uid) {
-            const data = leaveConfig[uid] || leaveConfig["A001"];
+            const data = leaveConfig[uid];
             let html = "";
             for (let type in data) {
-                const leave = data[type]; const remain = leave.total - leave.used; const percent = (remain / leave.total) * 100;
+                const leave = data[type]; 
+                const remain = leave.total - leave.used; 
+                const percent = (remain / leave.total) * 100;
                 html += `<div><div class="flex justify-between text-xs font-bold mb-1"><span>${type}</span><span class="text-slate-400">剩餘 ${remain}D / ${leave.total}D</span></div>
                          <div class="progress-bar"><div class="progress-fill bg-blue-600" style="width: ${percent}%"></div></div></div>`;
             }
@@ -315,7 +323,6 @@
             let annual = { n: 0, l: 0, e: 0, lv: 0 };
             let monthlyData = [];
 
-            // 統計選單中的所有月份
             const mOptions = Array.from(document.getElementById('monthSelect').options).map(o => parseInt(o.value));
             
             mOptions.forEach(m => {
