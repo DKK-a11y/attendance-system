@@ -1,362 +1,300 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Clock, Users, Coffee, AlertCircle, Send, CheckCircle2, 
-  Calendar, LogIn, LogOut, Search, X, ClipboardList, 
-  Trash2, TrendingUp, PieChart, BarChart, AlertTriangle 
-} from 'lucide-react';
-
-export default function App() {
-  const [isLogin, setIsLogin] = useState(false);
-  const [empId, setEmpId] = useState('');
-  const [password, setPassword] = useState('');
-  const [currentViewMonth, setCurrentViewMonth] = useState(new Date().getMonth()); 
-  const [attendanceData, setAttendanceData] = useState({});
-  const [punchMsg, setPunchMsg] = useState('');
-  const [searchId, setSearchId] = useState('');
-  const [showSearchResult, setShowSearchResult] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
-  
-  const [leaveForm, setLeaveForm] = useState({ 
-    date: new Date().toISOString().split('T')[0], 
-    type: '特休' 
-  });
-  const [cancelTarget, setCancelTarget] = useState(null);
-
-  const WORK_START = "08:00";
-  const WORK_END = "16:00";
-  const employees = ["A001", "A002", "A003", "A004", "A005"];
-  const curY = 2026;
-  const curM = new Date().getMonth();
-  const curD = new Date().getDate(); 
-
-  const allLeaveTypes = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
-
-  const [leaveBalances, setLeaveBalances] = useState({
-    "A001": { "特休": { total: 10, used: 2 }, "年假": { total: 5, used: 1 } },
-    "A002": { "特休": { total: 10, used: 5 }, "年假": { total: 5, used: 4 } },
-    "A003": { "特休": { total: 10, used: 0 }, "年假": { total: 5, used: 0 } },
-    "A004": { "特休": { total: 10, used: 8 }, "年假": { total: 5, used: 2 } },
-    "A005": { "特休": { total: 10, used: 1 }, "年假": { total: 5, used: 0 } }
-  });
-
-  useEffect(() => {
-    const data = {};
-    employees.forEach(emp => {
-      data[emp] = {};
-      for (let m = 0; m <= curM; m++) {
-        data[emp][m] = {};
-        const daysInMonth = new Date(curY, m + 1, 0).getDate();
-        for (let d = 1; d <= daysInMonth; d++) {
-          if (m === curM && d >= curD) continue;
-          const dateObj = new Date(curY, m, d);
-          const w = dateObj.getDay();
-          if (w === 0 || w === 6) continue;
-          let r = Math.random();
-          if (r < 0.90) {
-            const isLate = Math.random() > 0.92;
-            const isEarlyLeave = Math.random() > 0.95;
-            const onTime = isLate ? `08:${String(Math.floor(Math.random()*15)+1).padStart(2,'0')}` : `07:${String(Math.floor(Math.random()*15)+45).padStart(2,'0')}`;
-            const offTime = isEarlyLeave ? `15:${String(Math.floor(Math.random()*20)+40).padStart(2,'0')}` : `16:${String(Math.floor(Math.random()*15)).padStart(2,'0')}`;
-            let status = "正常";
-            if (isLate && isEarlyLeave) status = "遲到/早退";
-            else if (isLate) status = "遲到";
-            else if (isEarlyLeave) status = "早退";
-            data[emp][m][d] = { s: status, on: onTime, off: offTime };
-          } else { 
-            const randomType = allLeaveTypes[Math.floor(Math.random() * 4)];
-            data[emp][m][d] = { s: randomType, on: "請假", off: "請假" };
-          }
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 智能雲端考勤系統 - 旗艦完整版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tooltip { position: relative; cursor: help; }
+        .tooltip:hover::after {
+            content: attr(data-tip);
+            position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%);
+            background: #1e293b; color: #fff; padding: 8px 12px; border-radius: 8px;
+            font-size: 11px; white-space: pre-wrap; z-index: 100; width: 180px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); line-height: 1.6;
         }
-      }
-    });
-    setAttendanceData(data);
-  }, []);
+        .table-container { overflow-x: auto; scrollbar-width: thin; max-height: 400px; }
+        .sticky-col { position: sticky; left: 0; background: white; z-index: 10; border-right: 2px solid #e2e8f0 !important; }
+        .progress-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; margin-top: 4px; }
+        .progress-fill { height: 100%; transition: width 0.5s ease-out; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
 
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const handleLogin = () => {
-    if (employees.includes(empId.toUpperCase()) && password === '8888') {
-      setIsLogin(true);
-    }
-  };
-
-  const doPunch = (type) => {
-    const now = new Date();
-    const t = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    const id = empId.toUpperCase();
-    setAttendanceData(prev => {
-      const newData = { ...prev };
-      if (!newData[id]) newData[id] = {};
-      if (!newData[id][curM]) newData[id][curM] = {};
-      let dayData = newData[id][curM][curD] || { s: "正常", on: "", off: "" };
-      if (type === '上班') {
-        dayData.on = t;
-        dayData.s = t > WORK_START ? "遲到" : "正常";
-      } else {
-        dayData.off = t;
-        if (t < WORK_END) {
-          dayData.s = (dayData.s === "遲到") ? "遲到/早退" : "早退";
-        }
-      }
-      newData[id][curM][curD] = dayData;
-      setPunchMsg(`已紀錄 ${type}：${t} (${dayData.s})`);
-      return newData;
-    });
-  };
-
-  const submitLeave = () => {
-    const id = empId.toUpperCase();
-    const lDate = new Date(leaveForm.date);
-    const m = lDate.getMonth();
-    const d = lDate.getDate();
-    const lType = leaveForm.type;
-    setAttendanceData(prev => {
-      const newData = { ...prev };
-      if (!newData[id][m]) newData[id][m] = {};
-      newData[id][m][d] = { s: lType, on: "請假", off: "請假" };
-      return newData;
-    });
-    setLeaveBalances(prev => {
-      const newBalances = { ...prev };
-      if (newBalances[id]?.[lType]) newBalances[id][lType].used += 1;
-      return newBalances;
-    });
-    setPunchMsg(`✅ 已申請 ${m+1}/${d} ${lType}`);
-    setShowLeaveModal(false);
-  };
-
-  const globalStats = useMemo(() => {
-    let todayPresent = 0, totalWorkDaysInMonth = 0, monthPresent = 0, yearTotal = 0, yearPresent = 0;
-    employees.forEach(emp => {
-      if (attendanceData[emp]?.[curM]?.[curD]) todayPresent++;
-      for (let m = 0; m <= curM; m++) {
-        const days = new Date(curY, m + 1, 0).getDate();
-        for (let d = 1; d <= days; d++) {
-          const w = new Date(curY, m, d).getDay();
-          if (w === 0 || w === 6) continue; 
-          if (m === curM && d > curD) break;
-          yearTotal++;
-          if (attendanceData[emp]?.[m]?.[d]) {
-            yearPresent++;
-            if (m === currentViewMonth) monthPresent++;
-          }
-          if (m === currentViewMonth) totalWorkDaysInMonth++;
-        }
-      }
-    });
-    return {
-      today: (todayPresent / employees.length * 100).toFixed(1),
-      month: (monthPresent / Math.max(1, totalWorkDaysInMonth) * 100).toFixed(1),
-      year: (yearPresent / Math.max(1, yearTotal) * 100).toFixed(1)
-    };
-  }, [attendanceData, currentViewMonth]);
-
-  const searchStats = useMemo(() => {
-    const id = searchId.toUpperCase();
-    if (!employees.includes(id)) return null;
-    const stats = { year: 0, yearTotal: 0, months: {}, yearlyLeaves: {}, yearlyExceptions: { "遲到": 0, "早退": 0, "遲到/早退": 0 }, monthlyLeaves: {}, monthlyExceptions: {} };
-    for (let m = 0; m <= curM; m++) {
-      stats.months[m] = { present: 0, total: 0 };
-      stats.monthlyLeaves[m] = {};
-      stats.monthlyExceptions[m] = { "遲到": 0, "早退": 0, "遲到/早退": 0 };
-      const days = new Date(curY, m + 1, 0).getDate();
-      for (let d = 1; d <= days; d++) {
-        const w = new Date(curY, m, d).getDay();
-        if (w === 0 || w === 6 || (m === curM && d > curD)) continue;
-        stats.yearTotal++; 
-        stats.months[m].total++;
-        const day = attendanceData[id]?.[m]?.[d];
-        if (day) {
-          stats.year++; 
-          stats.months[m].present++;
-          if (["遲到", "早退", "遲到/早退"].includes(day.s)) {
-            stats.yearlyExceptions[day.s]++;
-            stats.monthlyExceptions[m][day.s]++;
-          } else if (day.s !== "正常") {
-            stats.yearlyLeaves[day.s] = (stats.yearlyLeaves[day.s] || 0) + 1;
-            stats.monthlyLeaves[m][day.s] = (stats.monthlyLeaves[m][day.s] || 0) + 1;
-          }
-        }
-      }
-    }
-    return stats;
-  }, [searchId, attendanceData]);
-
-  if (!isLogin) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
-        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600">
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight">AI 智慧考勤</h2>
-          <div className="space-y-4 mt-8">
-            <input type="text" placeholder="工號 A001-A005" className="w-full p-4 bg-slate-100 rounded-2xl outline-none font-bold" value={empId} onChange={e => setEmpId(e.target.value)} />
-            <input type="password" placeholder="密碼 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none" value={password} onChange={e => setPassword(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} />
-            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl">進入系統</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const daysInMonthCount = new Date(curY, currentViewMonth + 1, 0).getDate();
-  const wNames = ['日', '一', '二', '三', '四', '五', '六'];
-
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {showSearchResult && searchStats && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[150] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-            <button onClick={() => setShowSearchResult(false)} className="absolute top-8 right-8 p-3 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24}/></button>
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl">{searchId.toUpperCase()}</div>
-              <div><h3 className="text-2xl font-black text-slate-800">員工出席報表</h3><p className="text-slate-400 font-bold">考勤時間：{WORK_START} - {WORK_END}</p></div>
+    <div id="loginPage" class="flex items-center justify-center min-h-screen bg-slate-900 p-6">
+        <div class="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600">
+            <h2 class="text-3xl font-black text-center mb-2 uppercase tracking-widest text-slate-800">Staff Secure</h2>
+            <p class="text-center text-slate-400 text-xs mb-8 font-bold">工號 A001-A005 / 密碼 8888</p>
+            <div class="space-y-4">
+                <input type="text" id="loginId" placeholder="工號" class="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                <input type="password" id="loginPw" placeholder="密碼" class="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="login()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-xl mt-4">進入系統</button>
             </div>
-            <div className="grid grid-cols-4 gap-3 mb-8 text-center">
-              <div className="bg-blue-50 p-4 rounded-3xl"><p className="text-[9px] font-black text-blue-400">出席率</p><p className="text-2xl font-black text-blue-600">{((searchStats.year/searchStats.yearTotal)*100).toFixed(1)}%</p></div>
-              <div className="bg-amber-50 p-4 rounded-3xl"><p className="text-[9px] font-black text-amber-500">遲到</p><p className="text-2xl font-black text-amber-600">{searchStats.yearlyExceptions["遲到"]}</p></div>
-              <div className="bg-rose-50 p-4 rounded-3xl"><p className="text-[9px] font-black text-rose-500">早退</p><p className="text-2xl font-black text-rose-600">{searchStats.yearlyExceptions["早退"] + searchStats.yearlyExceptions["遲到/早退"]}</p></div>
-              <div className="bg-indigo-50 p-4 rounded-3xl"><p className="text-[9px] font-black text-indigo-400">請假</p><p className="text-2xl font-black text-indigo-600">{Object.values(searchStats.yearlyLeaves).reduce((a,b)=>a+b, 0)}</p></div>
-            </div>
-            <div className="space-y-4">
-              {Object.keys(searchStats.months).map(m => (
-                <div key={m} className="bg-slate-50 p-4 rounded-2xl border">
-                  <div className="flex justify-between font-black text-xs mb-2"><span>{parseInt(m)+1}月統計</span><span>出席: {searchStats.months[m].present}/{searchStats.months[m].total}</span></div>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(searchStats.monthlyLeaves[m]).map(([t, c]) => <span key={t} className="bg-white px-2 py-1 rounded-lg text-[10px] border">{t}: {c}天</span>)}
-                    {Object.entries(searchStats.monthlyExceptions[m]).map(([t, c]) => c > 0 && <span key={t} className="bg-amber-100 text-amber-600 px-2 py-1 rounded-lg text-[10px]">{t}: {c}次</span>)}
-                    {Object.values(searchStats.monthlyLeaves[m]).length === 0 && Object.values(searchStats.monthlyExceptions[m]).every(v=>v===0) && <span className="text-[10px] text-slate-400 italic">該月紀錄正常</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+            <p id="loginError" class="text-rose-500 text-xs text-center mt-4 font-bold hidden">身分驗證失敗，請檢查工號或密碼</p>
         </div>
-      )}
-
-      {showLeaveModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
-            <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-black">預約請假</h3><button onClick={() => setShowLeaveModal(false)}><X size={20}/></button></div>
-            <div className="space-y-4">
-              <input type="date" value={leaveForm.date} onChange={e => setLeaveForm({...leaveForm, date: e.target.value})} className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none" />
-              <div className="grid grid-cols-2 gap-2">
-                {allLeaveTypes.map(type => (
-                  <button key={type} onClick={() => setLeaveForm({...leaveForm, type})} className={`p-3 text-xs font-bold rounded-xl border ${leaveForm.type === type ? 'bg-blue-600 text-white' : 'bg-white'}`}>{type}</button>
-                ))}
-              </div>
-              <button onClick={submitLeave} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg">確認提交</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <header className="bg-white border-b sticky top-0 z-50 px-8 py-4 shadow-sm">
-        <div className="max-w-7xl mx-auto grid grid-cols-3 items-center">
-          <div className="flex gap-3">
-             {[{ label: '今日出席', val: globalStats.today, color: 'text-blue-600' },{ label: '當月出席', val: globalStats.month, color: 'text-indigo-600' },{ label: '年度出席', val: globalStats.year, color: 'text-emerald-600' }].map(s => (
-               <div key={s.label} className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 text-center min-w-[80px]">
-                 <p className="text-[8px] text-slate-400 font-bold uppercase">{s.label}</p>
-                 <p className={`text-xs font-black ${s.color}`}>{s.val}%</p>
-               </div>
-             ))}
-          </div>
-          <div className="text-center">
-             <div className="bg-slate-900 text-white px-8 py-2 rounded-full inline-block shadow-lg border-4 border-white">
-                <p className="text-2xl font-black tabular-nums tracking-tighter leading-none">{currentTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
-                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-0.5">{currentTime.toLocaleDateString('zh-TW', { month: 'long', day: 'numeric' })}</p>
-             </div>
-          </div>
-          <div className="flex justify-end items-center gap-4">
-            <select value={currentViewMonth} onChange={e => setCurrentViewMonth(parseInt(e.target.value))} className="p-2 bg-slate-100 rounded-xl font-bold text-sm outline-none">
-              {[0,1,2,3,4,5,6,7,8,9,10,11].map(m => <option key={m} value={m}>{m+1}月統計表</option>)}
-            </select>
-            <button onClick={() => setIsLogin(false)} className="flex items-center gap-2 p-2 px-4 bg-rose-50 text-rose-600 rounded-xl font-bold text-sm border border-rose-100 hover:bg-rose-100 transition shadow-sm"><LogOut size={16} /> 登出</button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-[98%] mx-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-2 h-full bg-blue-600"></div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">操作工號</p>
-            <p className="text-4xl font-black text-slate-900 mb-6">{empId}</p>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => doPunch('上班')} className="bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition">上班打卡</button>
-                <button onClick={() => doPunch('下班')} className="bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition">下班打卡</button>
-              </div>
-              <button onClick={() => setShowLeaveModal(true)} className="w-full bg-indigo-50 text-indigo-600 py-4 rounded-2xl font-bold border border-indigo-100 hover:bg-indigo-100 transition flex items-center justify-center gap-2"><Calendar size={18} /> 預約請假申請</button>
-            </div>
-            <div className="mt-4 text-[10px] font-bold text-blue-500 bg-blue-50 py-3 rounded-xl min-h-12 flex items-center justify-center px-4 leading-tight">
-              {punchMsg || `考勤區間：${WORK_START} - ${WORK_END}`}
-            </div>
-          </div>
-        </div>
-
-        <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
-          <div className="p-4 border-b bg-slate-50/50 flex justify-between items-center px-8">
-             <div className="flex gap-2">
-                <input type="text" placeholder="工號 A001-A005" className="text-xs p-2 border rounded-xl outline-none w-40 bg-white font-bold" value={searchId} onChange={e => setSearchId(e.target.value)} onKeyPress={e => e.key === 'Enter' && setShowSearchResult(true)} />
-                <button onClick={() => setShowSearchResult(true)} className="text-xs bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-black transition">搜尋報表</button>
-             </div>
-          </div>
-          <div className="overflow-auto flex-1">
-            <table className="w-full text-[10px] text-center border-collapse">
-              <thead className="bg-slate-50 text-slate-400 font-bold sticky top-0 z-20">
-                <tr>
-                  <th className="p-4 bg-white border-b sticky left-0 z-30 min-w-[80px]">員工</th>
-                  {Array.from({ length: daysInMonthCount }, (_, i) => i + 1).map(d => (
-                    <th key={d} className={`p-2 border-b min-w-[50px] ${(currentViewMonth === curM && d === curD) ? 'bg-blue-600 text-white shadow-inner' : ''}`}>
-                      {d}<br />{wNames[new Date(curY, currentViewMonth, d).getDay()]}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map(emp => (
-                  <tr key={emp} className="hover:bg-slate-50/50">
-                    <td className="p-4 font-black sticky left-0 bg-white border-b z-10 border-r">{emp}</td>
-                    {Array.from({ length: daysInMonthCount }, (_, i) => i + 1).map(d => {
-                      const dayData = attendanceData[emp]?.[currentViewMonth]?.[d];
-                      const w = new Date(curY, currentViewMonth, d).getDay();
-                      let content = "—", color = "text-slate-200", tooltip = "";
-                      const isWorkDay = w !== 0 && w !== 6;
-                      const isPast = (currentViewMonth < curM) || (currentViewMonth === curM && d < curD);
-
-                      if (!isWorkDay) { content = "例假"; color = "text-slate-400 bg-slate-50/50"; }
-                      else if (dayData) {
-                        content = dayData.s;
-                        if (content === "正常") color = "text-slate-900";
-                        else if (content === "遲到") color = "text-amber-500 bg-amber-50/30";
-                        else if (["早退", "遲到/早退"].includes(content)) color = "text-rose-500 bg-rose-50/30";
-                        else color = "text-indigo-600 bg-indigo-50/50 border rounded-lg";
-                        if (dayData.on) tooltip = `打卡：${dayData.on} ~ ${dayData.off || '--:--'}`;
-                      } else if (isPast) {
-                        content = "未紀錄"; color = "text-rose-300";
-                      }
-
-                      return (
-                        <td key={d} className={`p-1 border-b border-r border-slate-50 font-bold ${color} group relative transition-all`}>
-                          <span className="relative z-10">{content}</span>
-                          {dayData?.on && dayData.on !== "請假" && (
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-[60] pointer-events-none">
-                              <div className="bg-slate-800 text-white text-[9px] px-2 py-1 rounded shadow-xl whitespace-nowrap">{tooltip}</div>
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
     </div>
-  );
-}
+
+    <div id="mainDashboard" class="hidden">
+        <header class="bg-white border-b sticky top-0 z-50 px-8 py-6 shadow-sm">
+            <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 items-center gap-6">
+                <div class="flex gap-3 justify-center lg:justify-start">
+                    <div class="text-center bg-slate-50 px-3 py-2 rounded-xl border">
+                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">當日出席</p>
+                        <p id="dailyRate" class="text-base font-black text-green-500">0.0%</p>
+                    </div>
+                    <div class="text-center bg-slate-50 px-3 py-2 rounded-xl border">
+                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">當月出席</p>
+                        <p id="monthlyRate" class="text-base font-black text-blue-600">--</p>
+                    </div>
+                    <div class="text-center bg-slate-50 px-3 py-2 rounded-xl border">
+                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">年度累計</p>
+                        <p class="text-base font-black text-slate-700">98.5%</p>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div id="clock" class="text-5xl font-mono font-black text-slate-800 tracking-tighter">00:00:00</div>
+                    <div id="dateStr" class="text-xs text-blue-600 font-bold mt-2 tracking-widest uppercase"></div>
+                </div>
+                <div class="flex justify-center lg:justify-end">
+                    <select id="monthSelect" onchange="initTable()" class="p-2 bg-slate-100 border-none rounded-xl font-bold text-sm">
+                        <option value="0">2026年 1月</option>
+                        <option value="1">2026年 2月</option>
+                        <option value="2" selected>2026年 3月</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-[98%] mx-auto p-6 space-y-8">
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div class="lg:col-span-1 space-y-6">
+                    <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center">
+                        <p class="text-[10px] text-slate-400 mb-2 font-bold uppercase tracking-widest">Welcome</p>
+                        <p id="userDisp" class="text-3xl font-black text-blue-600 mb-6">--</p>
+                        <button onclick="doPunch('上班')" class="w-full mb-3 bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition">☀️ 簽到上班</button>
+                        <button onclick="doPunch('下班')" class="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold active:scale-95 transition">🌙 簽退下班</button>
+                        <p id="punchTypeResult" class="mt-4 text-[10px] font-black text-blue-500 bg-blue-50 py-2 rounded-xl h-8 flex items-center justify-center"></p>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+                        <h3 class="font-bold text-xs uppercase text-slate-400 mb-5 tracking-widest">可休假別與天數</h3>
+                        <div id="leaveBalanceList" class="space-y-6"></div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+                    <div class="p-6 border-b bg-slate-50/50 flex flex-wrap justify-between items-center gap-4">
+                        <div class="flex gap-2">
+                            <input type="text" id="searchId" placeholder="工號 A001-A005" class="text-xs p-3 border rounded-xl outline-none w-48 focus:ring-2 focus:ring-blue-500">
+                            <button onclick="searchEmp()" class="text-xs bg-slate-800 text-white px-6 rounded-xl font-bold hover:bg-black transition">分析統計報表</button>
+                        </div>
+                        <div class="flex gap-4 text-[9px] font-bold uppercase bg-white px-3 py-1 rounded-full border">
+                            <span class="text-slate-900">● 正常</span> <span class="text-red-500">● 遲到</span> <span class="text-green-500">● 早退</span> <span class="text-indigo-500">● 休假</span>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="w-full text-xs text-center border-collapse">
+                            <thead id="tableHead" class="bg-slate-50 text-slate-400 font-bold"></thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="searchResultPanel" class="hidden space-y-6">
+                <div class="bg-white p-8 rounded-[3rem] shadow-xl border-l-8 border-slate-800">
+                    <div class="flex justify-between items-start mb-8">
+                        <h2 id="resultTitle" class="text-3xl font-black text-slate-800">員工出席大數據報表</h2>
+                        <button onclick="document.getElementById('searchResultPanel').classList.add('hidden')" class="text-slate-300 text-2xl">✕</button>
+                    </div>
+                    <div id="annualSummary" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10"></div>
+                    <div class="overflow-x-auto rounded-2xl border">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-800 text-white">
+                                <tr><th class="p-4 text-left">月份分析</th><th class="p-4 text-center">正常天數</th><th class="p-4 text-center">遲到次數</th><th class="p-4 text-center">早退次數</th><th class="p-4 text-center">請假天數</th><th class="p-4 text-center">出席率</th></tr>
+                            </thead>
+                            <tbody id="monthlyDetailBody" class="bg-slate-50"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const userCredentials = { "A001": "8888", "A002": "8888", "A003": "8888", "A004": "8888", "A005": "8888" };
+        const employees = ["A001", "A002", "A003", "A004", "A005"];
+        const curY = 2026, curM = 2, curD = 12; // 模擬今日為 3/12
+        let attendanceData = {};
+
+        const leaveConfig = {
+            "A001": { "特休": {total: 10, used: 2}, "病假": {total: 30, used: 1}, "事假": {total: 7, used: 0} },
+            "A002": { "特休": {total: 7, used: 5}, "病假": {total: 30, used: 4}, "事假": {total: 7, used: 2} },
+            "A003": { "特休": {total: 14, used: 0}, "病假": {total: 30, used: 0}, "事假": {total: 7, used: 1} },
+            "A004": { "特休": {total: 7, used: 1}, "病假": {total: 30, used: 10}, "事假": {total: 7, used: 0} },
+            "A005": { "特休": {total: 3, used: 0}, "病假": {total: 30, used: 2}, "事假": {total: 7, used: 5} }
+        };
+
+        function generateData() {
+            employees.forEach(emp => {
+                attendanceData[emp] = { 0: {}, 1: {}, 2: {} };
+                for (let m = 0; m <= 2; m++) {
+                    let days = new Date(curY, m + 1, 0).getDate();
+                    for (let d = 1; d <= days; d++) {
+                        if (m === 2 && d >= curD) continue;
+                        const w = new Date(curY, m, d).getDay();
+                        if (w === 0 || w === 6) continue;
+                        let r = Math.random();
+                        if (r < 0.82) attendanceData[emp][m][d] = { s: "正常", on: "08:52", off: "18:05" };
+                        else if (r < 0.88) attendanceData[emp][m][d] = { s: "遲到", on: "09:15", off: "18:10" };
+                        else if (r < 0.94) attendanceData[emp][m][d] = { s: "早退", on: "08:50", off: "16:40" };
+                        else attendanceData[emp][m][d] = { s: "特休", on: "請假", off: "請假" };
+                    }
+                }
+            });
+        }
+
+        function login() {
+            const id = document.getElementById('loginId').value.toUpperCase();
+            const pw = document.getElementById('loginPw').value;
+            if (userCredentials[id] && userCredentials[id] === pw) {
+                generateData();
+                document.getElementById('loginPage').classList.add('hidden');
+                document.getElementById('mainDashboard').classList.remove('hidden');
+                document.getElementById('userDisp').innerText = id;
+                renderLeaveBalance(id); initTable(); updateDailyRate();
+            } else {
+                document.getElementById('loginError').classList.remove('hidden');
+            }
+        }
+
+        function renderLeaveBalance(uid) {
+            const data = leaveConfig[uid] || leaveConfig["A001"];
+            let html = "";
+            for (let type in data) {
+                const leave = data[type]; const remain = leave.total - leave.used; const percent = (remain / leave.total) * 100;
+                html += `<div><div class="flex justify-between text-xs font-bold mb-1"><span>${type}</span><span class="text-slate-400">剩餘 ${remain}D / ${leave.total}D</span></div>
+                         <div class="progress-bar"><div class="progress-fill bg-blue-600" style="width: ${percent}%"></div></div></div>`;
+            }
+            document.getElementById('leaveBalanceList').innerHTML = html;
+        }
+
+        function updateClock() {
+            document.getElementById('clock').innerText = new Date().toLocaleTimeString('en-GB');
+            document.getElementById('dateStr').innerText = new Date().toDateString().toUpperCase();
+        }
+        setInterval(updateClock, 1000); updateClock();
+
+        function initTable() {
+            const m = parseInt(document.getElementById('monthSelect').value);
+            const daysInM = new Date(curY, m + 1, 0).getDate();
+            const wNames = ['日', '一', '二', '三', '四', '五', '六'];
+            let h = `<tr><th class="p-4 sticky-col border-b">工號</th>`;
+            for (let d = 1; d <= daysInM; d++) h += `<th class="p-2 border-b ${(m===curM&&d===curD)?'bg-blue-600 text-white':''}">${d}<br>${wNames[new Date(curY, m, d).getDay()]}</th>`;
+            document.getElementById('tableHead').innerHTML = h + `</tr>`;
+            let b = "";
+            employees.forEach(emp => {
+                b += `<tr><td class="p-4 font-black sticky-col border-b shadow-sm bg-white">${emp}</td>`;
+                for (let d = 1; d <= daysInM; d++) {
+                    const w = new Date(curY, m, d).getDay();
+                    let content = "—", color = "text-slate-200", tip = "無記錄";
+                    if (w === 0 || w === 6) { content = "例假"; color = "text-slate-300"; }
+                    else if (attendanceData[emp][m][d]) {
+                        const data = attendanceData[emp][m][d];
+                        content = data.s; 
+                        tip = `上班：${data.on || '--'}\n下班：${data.off || '--'}`;
+                        if (content === "遲到") color = "text-red-500";
+                        else if (content === "早退") color = "text-green-500";
+                        else if (content === "遲到/早退") color = "text-red-600 font-black";
+                        else if (content === "正常") color = "text-slate-900";
+                        else color = "text-indigo-500";
+                    }
+                    b += `<td class="p-2 border-b border-r border-slate-50 font-bold ${color} tooltip" data-tip="${tip}">${content}</td>`;
+                }
+                b += `</tr>`;
+            });
+            document.getElementById('tableBody').innerHTML = b;
+            updateMonthlyRate();
+        }
+
+        // 修改後的 doPunch：處理雙重異常
+        function doPunch(type) {
+            const t = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+            const h = new Date().getHours();
+            const id = document.getElementById('userDisp').innerText;
+            if (!attendanceData[id][curM][curD]) attendanceData[id][curM][curD] = { s: "正常", on: "", off: "" };
+            let rec = attendanceData[id][curM][curD];
+
+            if (type === '上班') {
+                rec.on = t;
+                if (h >= 9) rec.s = "遲到";
+            } else {
+                rec.off = t;
+                if (h < 18) {
+                    if (rec.s === "遲到") rec.s = "遲到/早退";
+                    else rec.s = "早退";
+                }
+            }
+            initTable(); updateDailyRate();
+            document.getElementById('punchTypeResult').innerText = `已紀錄 ${type}：${t} (${rec.s})`;
+        }
+
+        function updateDailyRate() {
+            let p = 0; employees.forEach(e => { if (attendanceData[e][curM][curD]) p++; });
+            document.getElementById('dailyRate').innerText = `${(p/employees.length*100).toFixed(1)}%`;
+        }
+
+        function updateMonthlyRate() {
+            const m = parseInt(document.getElementById('monthSelect').value);
+            let total = 0, present = 0;
+            employees.forEach(e => {
+                Object.values(attendanceData[e][m]).forEach(v => { total++; if (["正常", "遲到", "早退", "遲到/早退"].includes(v.s)) present++; });
+            });
+            document.getElementById('monthlyRate').innerText = total > 0 ? `${(present/total*100).toFixed(1)}%` : "0.0%";
+        }
+
+        function searchEmp() {
+            const id = document.getElementById('searchId').value.toUpperCase();
+            if (!employees.includes(id)) return alert("找不到該工號");
+            let annual = { n: 0, l: 0, e: 0, lv: 0 };
+            let monthly = [{ name: "1月", n: 0, l: 0, e: 0, lv: 0, total: 0 }, { name: "2月", n: 0, l: 0, e: 0, lv: 0, total: 0 }, { name: "3月", n: 0, l: 0, e: 0, lv: 0, total: 0 }];
+            
+            [0, 1, 2].forEach(m => {
+                Object.values(attendanceData[id][m]).forEach(r => {
+                    monthly[m].total++;
+                    if (r.s === "正常") { monthly[m].n++; annual.n++; }
+                    else if (r.s === "遲到") { monthly[m].l++; annual.l++; }
+                    else if (r.s === "早退") { monthly[m].e++; annual.e++; }
+                    else if (r.s === "遲到/早退") { 
+                        monthly[m].l++; annual.l++; 
+                        monthly[m].e++; annual.e++; 
+                    }
+                    else { monthly[m].lv++; annual.lv++; }
+                });
+            });
+
+            const totalDays = annual.n + annual.l + annual.e + annual.lv;
+            const annRate = (((annual.n + annual.l + annual.e)/totalDays)*100).toFixed(1);
+            
+            document.getElementById('annualSummary').innerHTML = `
+                <div class="bg-blue-600 text-white p-5 rounded-3xl"><p class="text-[10px] font-bold opacity-70">年度出席率</p><p class="text-3xl font-black">${annRate}%</p></div>
+                <div class="bg-slate-100 p-5 rounded-3xl"><p class="text-[10px] font-bold text-slate-400">正常</p><p class="text-3xl font-black">${annual.n}</p></div>
+                <div class="bg-red-50 p-5 rounded-3xl text-red-600"><p class="text-[10px] font-bold">遲到</p><p class="text-3xl font-black">${annual.l}</p></div>
+                <div class="bg-green-50 p-5 rounded-3xl text-green-600"><p class="text-[10px] font-bold">早退</p><p class="text-3xl font-black">${annual.e}</p></div>
+                <div class="bg-indigo-50 p-5 rounded-3xl text-indigo-600"><p class="text-[10px] font-bold">請假</p><p class="text-3xl font-black">${annual.lv}</p></div>`;
+            
+            let tableH = "";
+            monthly.forEach(m => {
+                const mRate = m.total > 0 ? (((m.total-m.lv)/m.total)*100).toFixed(1) : "0.0";
+                tableH += `<tr class="border-b"><td class="p-4 font-bold text-left">${m.name}</td>
+                    <td class="text-center">${m.n}</td><td class="text-red-500 font-bold text-center">${m.l}</td>
+                    <td class="text-green-600 font-bold text-center">${m.e}</td><td class="text-center">${m.lv}</td>
+                    <td class="text-center"><span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-black text-xs">${mRate}%</span></td></tr>`;
+            });
+            document.getElementById('monthlyDetailBody').innerHTML = tableH;
+            document.getElementById('searchResultPanel').classList.remove('hidden');
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
