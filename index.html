@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧考勤系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #f3f4f6; }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center">
+            <div class="mb-6">
+                <div class="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">考勤系統後台</h1>
+                <p class="text-gray-500 mt-2">系統已在雲端運行，並與 Telegram 連動</p>
+            </div>
+            
+            <div class="space-y-4 text-left">
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <p class="text-sm font-semibold text-gray-700">伺服器狀態：<span class="text-green-600">正常運行中</span></p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <p class="text-sm font-semibold text-gray-700">Webhook 路徑：</p>
+                    <code class="text-xs text-blue-600 break-all">/api/bot</code>
+                </div>
+            </div>
+
+            <div class="mt-8 text-xs text-gray-400">
+                &copy; 2026 智慧考勤系統管理中心
+            </div>
+        </div>
+    </div>
+</body>
+</html>
