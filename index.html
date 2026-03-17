@@ -5,8 +5,7 @@ import {
   collection, 
   doc, 
   onSnapshot, 
-  setDoc, 
-  getDoc 
+  setDoc 
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -20,20 +19,31 @@ import {
   Trash2, TrendingUp, PieChart, BarChart, AlertTriangle 
 } from 'lucide-react';
 
-// --- Firebase 配置 ---
+// --- Firebase 配置 (使用系統環境變量) ---
 const firebaseConfig = JSON.parse(__firebase_config);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'enterprise-attendance-v2';
 
-const App = () => {
-  // --- 狀態管理 ---
+// 員工清單與初始配置
+const EMPLOYEES = ["A001", "A002", "A003", "A004", "A005"];
+const INITIAL_BALANCES = {
+  "A001": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
+  "A002": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
+  "A003": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
+  "A004": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
+  "A005": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } }
+};
+const LEAVE_TYPES = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
+
+function AttendanceApp() {
+  // --- 狀態定義 ---
   const [isLogin, setIsLogin] = useState(false);
   const [user, setUser] = useState(null);
   const [empId, setEmpId] = useState('');
   const [password, setPassword] = useState('');
-  const [currentViewMonth, setCurrentViewMonth] = useState(new Date().getMonth()); 
+  const [currentViewMonth, setCurrentViewMonth] = useState(new Date().getMonth());
   const [attendanceData, setAttendanceData] = useState({});
   const [punchMsg, setPunchMsg] = useState('');
   const [searchId, setSearchId] = useState('');
@@ -41,73 +51,70 @@ const App = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ date: new Date().toISOString().split('T')[0], type: '特休' });
+  const [leaveBalances, setLeaveBalances] = useState(INITIAL_BALANCES);
   const [cancelTarget, setCancelTarget] = useState(null);
 
-  // --- 靜態配置 ---
-  const employees = ["A001", "A002", "A003", "A004", "A005"];
   const curY = 2026;
   const curM = new Date().getMonth();
   const curD = new Date().getDate();
-  const allLeaveTypes = ["特休", "年假", "病假", "事假", "例假", "喪假", "產假", "陪產假", "婚假", "公假"];
 
-  // 初始假別餘額
-  const initialBalances = {
-    "A001": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
-    "A002": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
-    "A003": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
-    "A004": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } },
-    "A005": { "特休": { total: 10, used: 0 }, "年假": { total: 7, used: 0 } }
-  };
-  const [leaveBalances, setLeaveBalances] = useState(initialBalances);
-
-  // 1. 處理身份驗證 (Rule 3)
+  // 1. 初始化 Firebase 驗證
   useEffect(() => {
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth Failed", err);
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
+    return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // 2. 監聽 Firestore 資料 (Rule 1 & 2)
+  // 2. 監聽 Firestore 數據
   useEffect(() => {
     if (!user) return;
 
-    const attRef = collection(db, 'artifacts', appId, 'public', 'data', 'attendance');
-    const unsubAtt = onSnapshot(attRef, (snapshot) => {
-      const data = {};
-      snapshot.forEach(doc => { data[doc.id] = doc.data(); });
-      setAttendanceData(data);
-    }, (err) => console.error("Fetch Att Error:", err));
+    const unsubAtt = onSnapshot(
+      collection(db, 'artifacts', appId, 'public', 'data', 'attendance'),
+      (snapshot) => {
+        const data = {};
+        snapshot.forEach(doc => { data[doc.id] = doc.data(); });
+        setAttendanceData(data);
+      },
+      (err) => console.error("Attendance Sync Error", err)
+    );
 
-    const balRef = collection(db, 'artifacts', appId, 'public', 'data', 'balances');
-    const unsubBal = onSnapshot(balRef, (snapshot) => {
-      const bals = { ...initialBalances };
-      snapshot.forEach(doc => { bals[doc.id] = doc.data(); });
-      setLeaveBalances(bals);
-    }, (err) => console.error("Fetch Bal Error:", err));
+    const unsubBal = onSnapshot(
+      collection(db, 'artifacts', appId, 'public', 'data', 'balances'),
+      (snapshot) => {
+        const bals = { ...INITIAL_BALANCES };
+        snapshot.forEach(doc => { bals[doc.id] = doc.data(); });
+        setLeaveBalances(bals);
+      },
+      (err) => console.error("Balances Sync Error", err)
+    );
 
     return () => { unsubAtt(); unsubBal(); };
   }, [user]);
 
+  // 3. 時鐘更新
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // --- 業務邏輯 ---
   const handleLogin = () => {
-    if (employees.includes(empId.toUpperCase()) && password === '8888') {
+    if (EMPLOYEES.includes(empId.toUpperCase()) && password === '8888') {
       setIsLogin(true);
+    } else {
+      setPunchMsg("⚠️ 帳號或密碼錯誤");
     }
-  };
-
-  const handleLogout = () => {
-    setIsLogin(false); setEmpId(''); setPassword(''); setPunchMsg(''); setShowSearchResult(false);
   };
 
   const doPunch = async (type) => {
@@ -116,7 +123,7 @@ const App = () => {
     const id = empId.toUpperCase();
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id);
     
-    const currentData = attendanceData[id] || {};
+    const currentData = JSON.parse(JSON.stringify(attendanceData[id] || {}));
     if (!currentData[curM]) currentData[curM] = {};
     
     const status = (type === '上班' && t > "08:00") ? "遲到" : "正常";
@@ -140,58 +147,51 @@ const App = () => {
     const d = lDate.getDate();
     const lType = leaveForm.type;
 
-    const attRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id);
-    const currentAtt = attendanceData[id] || {};
+    const currentAtt = JSON.parse(JSON.stringify(attendanceData[id] || {}));
     if (!currentAtt[m]) currentAtt[m] = {};
     currentAtt[m][d] = { s: lType, on: "請假", off: "請假" };
-    await setDoc(attRef, currentAtt);
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', id), currentAtt);
 
-    const balRef = doc(db, 'artifacts', appId, 'public', 'data', 'balances', id);
-    const currentBal = { ...leaveBalances[id] };
+    const currentBal = JSON.parse(JSON.stringify(leaveBalances[id] || {}));
     if (currentBal[lType]) {
       currentBal[lType].used += 1;
-      await setDoc(balRef, currentBal);
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'balances', id), currentBal);
     }
 
-    setPunchMsg(`✅ 已申請：${lType}`);
+    setPunchMsg(`✅ 已提交 ${lType}`);
     setShowLeaveModal(false);
   };
 
   const handleCancelLeave = async () => {
-    if (!user) return;
+    if (!user || !cancelTarget) return;
     const { emp, m, d, type } = cancelTarget;
-    const attRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendance', emp);
-    const currentAtt = { ...attendanceData[emp] };
-    delete currentAtt[m][d];
-    await setDoc(attRef, currentAtt);
+    const currentAtt = JSON.parse(JSON.stringify(attendanceData[emp] || {}));
+    if (currentAtt[m]) delete currentAtt[m][d];
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', emp), currentAtt);
 
-    const balRef = doc(db, 'artifacts', appId, 'public', 'data', 'balances', emp);
-    const currentBal = { ...leaveBalances[emp] };
+    const currentBal = JSON.parse(JSON.stringify(leaveBalances[emp] || {}));
     if (currentBal[type]) {
       currentBal[type].used = Math.max(0, currentBal[type].used - 1);
-      await setDoc(balRef, currentBal);
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'balances', emp), currentBal);
     }
     setCancelTarget(null);
   };
 
   const globalStats = useMemo(() => {
     let todayP = 0, yP = 0;
-    employees.forEach(e => {
+    EMPLOYEES.forEach(e => {
       if (attendanceData[e]?.[curM]?.[curD]) todayP++;
       Object.keys(attendanceData[e] || {}).forEach(m => {
         Object.keys(attendanceData[e][m] || {}).forEach(d => { yP++; });
       });
     });
-    return {
-      today: (todayP / employees.length * 100).toFixed(1),
-      year: yP
-    };
+    return { today: (todayP / EMPLOYEES.length * 100).toFixed(1), year: yP };
   }, [attendanceData]);
 
   const searchStats = useMemo(() => {
     const id = searchId.toUpperCase();
-    if (!employees.includes(id)) return null;
-    const stats = { yearTotal: 0, presentDays: 0, exceptions: { "遲到": 0, "早退": 0 }, leaves: {} };
+    if (!EMPLOYEES.includes(id)) return null;
+    const stats = { presentDays: 0, exceptions: { "遲到": 0 }, leaves: {} };
     const empData = attendanceData[id] || {};
     Object.keys(empData).forEach(m => {
       Object.keys(empData[m]).forEach(d => {
@@ -206,13 +206,14 @@ const App = () => {
 
   if (!isLogin) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
-        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600">
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600 text-center">
           <h2 className="text-3xl font-black text-slate-800 tracking-tight">AI 智慧考勤雲端版</h2>
           <div className="space-y-4 mt-8">
             <input type="text" placeholder="工號 A001-A005" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={empId} onChange={e => setEmpId(e.target.value)} />
             <input type="password" placeholder="密碼 8888" className="w-full p-4 bg-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={password} onChange={e => setPassword(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} />
-            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl">進入系統</button>
+            <button onClick={handleLogin} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl hover:bg-blue-700 transition">進入系統</button>
+            {punchMsg && <p className="text-xs text-rose-500 font-bold">{punchMsg}</p>}
           </div>
         </div>
       </div>
@@ -224,25 +225,24 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* 搜尋結果彈窗 */}
+      {/* 搜尋彈窗 */}
       {showSearchResult && searchStats && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[150] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl relative animate-in zoom-in duration-300">
-            <button onClick={() => setShowSearchResult(false)} className="absolute top-8 right-8 p-3 bg-slate-100 hover:bg-slate-200 rounded-full transition"><X size={20}/></button>
+          <div className="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl relative">
+            <button onClick={() => setShowSearchResult(false)} className="absolute top-8 right-8 p-3 bg-slate-100 rounded-full"><X size={20}/></button>
             <div className="flex items-center gap-4 mb-8">
               <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl">{searchId.toUpperCase()}</div>
-              <div><h3 className="text-2xl font-black text-slate-800">員工出席報表</h3><p className="text-slate-400 font-bold">雲端實時數據統計</p></div>
+              <div><h3 className="text-2xl font-black text-slate-800">員工報表</h3><p className="text-slate-400 font-bold">雲端實時統計</p></div>
             </div>
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><p className="text-[10px] font-bold text-blue-400 uppercase">總出勤天數</p><p className="text-2xl font-black text-blue-600">{searchStats.presentDays} D</p></div>
-              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100"><p className="text-[10px] font-bold text-amber-500 uppercase">累積遲到</p><p className="text-2xl font-black text-amber-600">{searchStats.exceptions["遲到"]} 次</p></div>
+              <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><p className="text-[10px] font-bold text-blue-400 uppercase">出勤天數</p><p className="text-2xl font-black text-blue-600">{searchStats.presentDays} D</p></div>
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100"><p className="text-[10px] font-bold text-amber-500 uppercase">遲到次數</p><p className="text-2xl font-black text-amber-600">{searchStats.exceptions["遲到"]}</p></div>
             </div>
             <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-400 border-b pb-2">假別紀錄</h4>
+              <h4 className="text-xs font-bold text-slate-400 border-b pb-2">假別統計</h4>
               {Object.entries(searchStats.leaves).map(([type, count]) => (
-                <div key={type} className="flex justify-between text-sm py-1 font-medium text-slate-600"><span>{type}</span><span>{count} 天</span></div>
+                <div key={type} className="flex justify-between text-sm py-1 font-medium"><span>{type}</span><span>{count} 天</span></div>
               ))}
-              {Object.keys(searchStats.leaves).length === 0 && <p className="text-xs text-slate-300 italic">無請假紀錄</p>}
             </div>
           </div>
         </div>
@@ -252,15 +252,18 @@ const App = () => {
       {showLeaveModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
-            <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-black text-slate-800">請假申請</h3><button onClick={() => setShowLeaveModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20}/></button></div>
+            <h3 className="text-xl font-black mb-6">請假申請</h3>
             <div className="space-y-4">
               <input type="date" value={leaveForm.date} onChange={e => setLeaveForm({...leaveForm, date: e.target.value})} className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none" />
               <div className="grid grid-cols-2 gap-2">
-                {allLeaveTypes.map(type => (
-                  <button key={type} onClick={() => setLeaveForm({...leaveForm, type})} className={`p-3 text-xs font-bold rounded-xl border ${leaveForm.type === type ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white'}`}>{type}</button>
+                {LEAVE_TYPES.map(type => (
+                  <button key={type} onClick={() => setLeaveForm({...leaveForm, type})} className={`p-3 text-xs font-bold rounded-xl border ${leaveForm.type === type ? 'bg-blue-600 text-white' : 'bg-white'}`}>{type}</button>
                 ))}
               </div>
-              <button onClick={submitLeave} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg">確認提交</button>
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setShowLeaveModal(false)} className="flex-1 py-4 font-bold text-slate-400">取消</button>
+                <button onClick={submitLeave} className="flex-2 bg-slate-800 text-white py-4 px-8 rounded-2xl font-bold shadow-lg">提交</button>
+              </div>
             </div>
           </div>
         </div>
@@ -271,8 +274,11 @@ const App = () => {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-xs rounded-[2rem] p-8 shadow-2xl text-center">
             <Trash2 size={32} className="mx-auto text-rose-500 mb-4" />
-            <h3 className="text-lg font-black text-slate-800 mb-6">取消此筆紀錄？</h3>
-            <div className="flex gap-3"><button onClick={() => setCancelTarget(null)} className="flex-1 py-3 font-bold text-slate-400">返回</button><button onClick={handleCancelLeave} className="flex-1 py-3 bg-rose-500 text-white rounded-xl font-bold">確認</button></div>
+            <h3 className="text-lg font-black text-slate-800 mb-6">要取消此請假紀錄？</h3>
+            <div className="flex gap-3">
+              <button onClick={() => setCancelTarget(null)} className="flex-1 py-3 font-bold text-slate-400">返回</button>
+              <button onClick={handleCancelLeave} className="flex-1 py-3 bg-rose-500 text-white rounded-xl font-bold">確認</button>
+            </div>
           </div>
         </div>
       )}
@@ -280,12 +286,8 @@ const App = () => {
       <header className="bg-white border-b sticky top-0 z-50 px-8 py-4 shadow-sm flex justify-between items-center">
         <div className="flex gap-3">
           <div className="bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 text-center">
-            <p className="text-[8px] text-blue-400 font-bold">今日出席</p>
+            <p className="text-[8px] text-blue-400 font-bold">今日出席率</p>
             <p className="text-xs font-black text-blue-600">{globalStats.today}%</p>
-          </div>
-          <div className="bg-slate-50 px-4 py-2 rounded-xl border border-slate-100 text-center">
-            <p className="text-[8px] text-slate-400 font-bold">總紀錄筆數</p>
-            <p className="text-xs font-black text-slate-600">{globalStats.year}</p>
           </div>
         </div>
         <div className="bg-slate-900 text-white px-8 py-2 rounded-full shadow-lg border-4 border-white text-center">
@@ -293,10 +295,10 @@ const App = () => {
           <p className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">{currentTime.toLocaleDateString('zh-TW', { month: 'long', day: 'numeric' })}</p>
         </div>
         <div className="flex items-center gap-4">
-          <select value={currentViewMonth} onChange={e => setCurrentViewMonth(parseInt(e.target.value))} className="p-2 bg-slate-100 rounded-xl font-bold text-sm outline-none">
-            {[...Array(12).keys()].map(m => <option key={m} value={m}>{m+1}月統計表</option>)}
+          <select value={currentViewMonth} onChange={e => setCurrentViewMonth(parseInt(e.target.value))} className="p-2 bg-slate-100 rounded-xl font-bold text-sm">
+            {[...Array(12).keys()].map(m => <option key={m} value={m}>{m+1}月統計</option>)}
           </select>
-          <button onClick={handleLogout} className="flex items-center gap-2 p-2 px-4 bg-rose-50 text-rose-600 rounded-xl font-bold text-sm border border-rose-100 hover:bg-rose-100 transition shadow-sm"><LogOut size={16} /> 登出</button>
+          <button onClick={() => setIsLogin(false)} className="p-2 px-4 bg-rose-50 text-rose-600 rounded-xl font-bold text-sm border border-rose-100 hover:bg-rose-100 transition"><LogOut size={16}/></button>
         </div>
       </header>
 
@@ -304,34 +306,31 @@ const App = () => {
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-2 h-full bg-blue-600"></div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">目前操作工號</p>
-            <p className="text-4xl font-black text-slate-900 mb-6">{empId}</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">工號</p>
+            <p className="text-4xl font-black text-slate-900 mb-6">{empId.toUpperCase()}</p>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => doPunch('上班')} className="bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition">上班打卡</button>
-                <button onClick={() => doPunch('下班')} className="bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-black active:scale-95 transition">下班打卡</button>
+                <button onClick={() => doPunch('上班')} className="bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg">上班</button>
+                <button onClick={() => doPunch('下班')} className="bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg">下班</button>
               </div>
-              <button onClick={() => setShowLeaveModal(true)} className="w-full bg-indigo-50 text-indigo-600 py-4 rounded-2xl font-bold border border-indigo-100 hover:bg-indigo-100 transition flex items-center justify-center gap-2"><Calendar size={18} /> 預約請假申請</button>
+              <button onClick={() => setShowLeaveModal(true)} className="w-full bg-indigo-50 text-indigo-600 py-4 rounded-2xl font-bold border border-indigo-100 flex items-center justify-center gap-2"><Calendar size={18}/> 預約請假</button>
             </div>
-            <div className="mt-4 text-[10px] font-bold text-blue-500 bg-blue-50 py-3 rounded-xl min-h-12 flex items-center justify-center px-4 leading-tight">
-              {punchMsg || "系統就緒 (雲端連線成功)"}
+            <div className="mt-4 text-[10px] font-bold text-blue-500 bg-blue-50 py-3 rounded-xl min-h-12 flex items-center justify-center px-4">
+              {punchMsg || "系統連線正常"}
             </div>
           </div>
 
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
              <h3 className="font-bold text-[10px] uppercase text-slate-400 mb-4 flex items-center gap-2"><TrendingUp size={12}/> 個人剩餘假別</h3>
              <div className="space-y-5">
-                {Object.entries(leaveBalances[empId.toUpperCase()] || {}).map(([type, leave]) => {
-                  const remain = leave.total - leave.used;
-                  return (
-                    <div key={type}>
-                      <div className="flex justify-between text-[10px] font-bold mb-1"><span>{type}</span><span className="text-blue-600">剩餘 {remain} / {leave.total} D</span></div>
-                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-600 transition-all duration-700" style={{ width: `${Math.max(0, (remain / leave.total) * 100)}%` }}></div>
-                      </div>
+                {Object.entries(leaveBalances[empId.toUpperCase()] || {}).map(([type, leave]) => (
+                  <div key={type}>
+                    <div className="flex justify-between text-[10px] font-bold mb-1"><span>{type}</span><span className="text-blue-600">剩餘 {leave.total - leave.used} D</span></div>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-600 transition-all duration-700" style={{ width: `${Math.max(0, ((leave.total - leave.used) / leave.total) * 100)}%` }}></div>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
              </div>
           </div>
         </div>
@@ -339,41 +338,40 @@ const App = () => {
         <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
           <div className="p-4 border-b bg-slate-50/50 flex justify-between items-center px-8">
              <div className="flex gap-2">
-                <input type="text" placeholder="工號 A001-A005" className="text-xs p-2 border rounded-xl outline-none w-40 bg-white font-bold" value={searchId} onChange={e => setSearchId(e.target.value)} onKeyPress={e => e.key === 'Enter' && setShowSearchResult(true)} />
-                <button onClick={() => setShowSearchResult(true)} className="text-xs bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-black transition">搜尋報表</button>
+                <input type="text" placeholder="查詢工號" className="text-xs p-2 border rounded-xl w-32 font-bold outline-none" value={searchId} onChange={e => setSearchId(e.target.value)} onKeyPress={e => e.key === 'Enter' && setShowSearchResult(true)} />
+                <button onClick={() => setShowSearchResult(true)} className="text-xs bg-slate-800 text-white px-4 rounded-xl font-bold">搜尋</button>
              </div>
-             <p className="text-[10px] font-bold text-slate-400">提示：點擊自己的請假格子可執行撤回</p>
+             <p className="text-[10px] font-bold text-slate-400 italic">點擊自己的請假紀錄可執行撤回操作</p>
           </div>
           <div className="overflow-auto flex-1">
             <table className="w-full text-[10px] text-center border-collapse">
               <thead className="bg-slate-50 text-slate-400 font-bold sticky top-0 z-20">
                 <tr>
-                  <th className="p-4 bg-white border-b sticky left-0 z-30 min-w-[80px]">工號</th>
+                  <th className="p-4 bg-white border-b sticky left-0 z-30 min-w-[80px]">員工工號</th>
                   {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => (
-                    <th key={d} className={`p-2 border-b min-w-[50px] ${(currentViewMonth === curM && d === curD) ? 'bg-blue-600 text-white shadow-inner' : ''}`}>
+                    <th key={d} className={`p-2 border-b min-w-[50px] ${(currentViewMonth === curM && d === curD) ? 'bg-blue-600 text-white' : ''}`}>
                       {d}<br />{wNames[new Date(curY, currentViewMonth, d).getDay()]}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {employees.map(emp => (
-                  <tr key={emp} className="hover:bg-slate-50/50 transition-colors">
+                {EMPLOYEES.map(emp => (
+                  <tr key={emp} className="hover:bg-slate-50/50">
                     <td className="p-4 font-black sticky left-0 bg-white border-b z-10 border-r">{emp}</td>
                     {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
                       const dayData = attendanceData[emp]?.[currentViewMonth]?.[d];
                       const w = new Date(curY, currentViewMonth, d).getDay();
                       let content = "—", color = "text-slate-200", tooltip = "";
-                      const isLeave = dayData && !["正常", "遲到", "早退"].includes(dayData.s);
-                      const hasPunch = dayData && ["正常", "遲到", "早退"].includes(dayData.s);
+                      const isLeave = dayData && !["正常", "遲到"].includes(dayData.s);
 
                       if (w === 0 || w === 6) { content = "例假"; color = "text-slate-400 bg-slate-50/30"; }
                       else if (dayData) {
                         content = dayData.s;
                         if (content === "正常") color = "text-slate-900";
                         else if (content === "遲到") color = "text-amber-500 bg-amber-50/30";
-                        else if (isLeave) color = "text-indigo-600 bg-indigo-50/50 cursor-pointer hover:bg-rose-50 hover:text-rose-600 transition-all border border-indigo-100 rounded-lg";
-                        if (hasPunch) tooltip = `打卡：${dayData.on || '--'} / ${dayData.off || '--'}`;
+                        else if (isLeave) color = "text-indigo-600 bg-indigo-50/50 cursor-pointer hover:bg-rose-50 border border-indigo-100 rounded-lg";
+                        if (["正常", "遲到"].includes(content)) tooltip = `${dayData.on || '--'} / ${dayData.off || '--'}`;
                       }
 
                       return (
@@ -381,9 +379,9 @@ const App = () => {
                           onClick={() => { if(isLeave && emp === empId.toUpperCase()) setCancelTarget({emp, m: currentViewMonth, d, type: content}) }}
                           className={`p-1 border-b border-r border-slate-50 font-bold ${color} group relative`}
                         >
-                          <span className="relative z-10">{content}</span>
-                          {hasPunch && (
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-[60] pointer-events-none">
+                          {content}
+                          {tooltip && (
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
                               <div className="bg-slate-800 text-white text-[9px] px-2 py-1 rounded shadow-xl whitespace-nowrap">{tooltip}</div>
                             </div>
                           )}
@@ -399,6 +397,8 @@ const App = () => {
       </main>
     </div>
   );
-};
+}
 
+// 使用標準的 React App 導出結構
+const App = () => <AttendanceApp />;
 export default App;
