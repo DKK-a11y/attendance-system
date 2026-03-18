@@ -1,380 +1,160 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 智能雲端考勤系統 - 請假功能強化版</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .tooltip { position: relative; cursor: help; }
-        .tooltip:hover::after {
-            content: attr(data-tip);
-            position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%);
-            background: #1e293b; color: #fff; padding: 8px 12px; border-radius: 8px;
-            font-size: 11px; white-space: pre-wrap; z-index: 100; width: 180px;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); line-height: 1.6;
-        }
-        .table-container { overflow-x: auto; scrollbar-width: thin; max-height: 450px; }
-        .sticky-col { position: sticky; left: 0; background: white; z-index: 10; border-right: 2px solid #e2e8f0 !important; }
-        .progress-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; margin-top: 4px; }
-        .progress-fill { height: 100%; transition: width 0.5s ease-out; }
-        .leave-cell { cursor: pointer; transition: all 0.2s; }
-        .leave-cell:hover { background-color: #fee2e2 !important; color: #ef4444 !important; }
-    </style>
-</head>
-<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
+<script>
+const userCredentials = { "A001": "8888", "A002": "8888", "A003": "8888", "A004": "8888", "A005": "8888" };
+const employees = ["A001", "A002", "A003", "A004", "A005"];
 
-    <div id="loginPage" class="flex items-center justify-center min-h-screen bg-slate-900 p-6">
-        <div class="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-blue-600">
-            <h2 class="text-3xl font-black text-center mb-2 uppercase tracking-widest text-slate-800">Staff Secure</h2>
-            <p class="text-center text-slate-400 text-xs mb-8 font-bold">工號 A001-A005 / 密碼 8888</p>
-            <div class="space-y-4">
-                <input type="text" id="loginId" placeholder="工號" class="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold">
-                <input type="password" id="loginPw" placeholder="密碼" class="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500">
-                <button onclick="login()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-xl mt-4">進入系統</button>
-            </div>
-            <p id="loginError" class="text-rose-500 text-xs text-center mt-4 font-bold hidden">身分驗證失敗，請檢查工號或密碼</p>
-        </div>
-    </div>
+const now = new Date();
+const curY = now.getFullYear();
+const curM = now.getMonth();
+const curD = now.getDate();
 
-    <div id="mainDashboard" class="hidden">
-        <header class="bg-white border-b sticky top-0 z-50 px-8 py-6 shadow-sm">
-            <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 items-center gap-6">
-                <div class="flex gap-3 justify-center lg:justify-start">
-                    <div class="text-center bg-slate-50 px-3 py-2 rounded-xl border">
-                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">當日出席</p>
-                        <p id="dailyRate" class="text-base font-black text-green-500">0.0%</p>
-                    </div>
-                    <div class="text-center bg-slate-50 px-3 py-2 rounded-xl border">
-                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">當月出席</p>
-                        <p id="monthlyRate" class="text-base font-black text-blue-600">--</p>
-                    </div>
-                </div>
-                <div class="text-center">
-                    <div id="clock" class="text-5xl font-mono font-black text-slate-800 tracking-tighter">00:00:00</div>
-                    <div id="dateStr" class="text-xs text-blue-600 font-bold mt-2 tracking-widest uppercase"></div>
-                </div>
-                <div class="flex justify-center lg:justify-end">
-                    <select id="monthSelect" onchange="initTable()" class="p-2 bg-slate-100 border-none rounded-xl font-bold text-sm">
-                    </select>
-                </div>
-            </div>
-        </header>
+let attendanceData = {};
 
-        <main class="max-w-[98%] mx-auto p-6 space-y-8">
-            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                <div class="lg:col-span-1 space-y-6">
-                    <!-- 打卡區 -->
-                    <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 text-center">
-                        <p class="text-[10px] text-slate-400 mb-2 font-bold uppercase tracking-widest">Welcome</p>
-                        <p id="userDisp" class="text-3xl font-black text-blue-600 mb-6">--</p>
-                        <button onclick="doPunch('上班')" class="w-full mb-3 bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition">☀️ 簽到上班</button>
-                        <button onclick="doPunch('下班')" class="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold active:scale-95 transition">🌙 簽退下班</button>
-                    </div>
+// ✅ 從後端抓資料
+async function loadData() {
+    try {
+        const res = await fetch("/api/getData");
+        const data = await res.json();
+        attendanceData = data || {};
+    } catch (e) {
+        console.log("尚未有資料，使用空資料");
+        attendanceData = {};
+    }
+}
 
-                    <!-- 自主請假區 -->
-                    <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-                        <h3 class="font-bold text-xs uppercase text-slate-400 mb-4 tracking-widest">自主點假</h3>
-                        <div class="space-y-3">
-                            <input type="date" id="leaveDate" class="w-full p-3 bg-slate-50 rounded-xl text-xs border-none focus:ring-1 focus:ring-blue-500">
-                            <select id="leaveTypeSelect" class="w-full p-3 bg-slate-50 rounded-xl text-xs border-none focus:ring-1 focus:ring-blue-500">
-                                <option value="特休">特休 (剩餘)</option>
-                                <option value="年假">年假 (剩餘)</option>
-                                <option value="病假">病假</option>
-                                <option value="事假">事假</option>
-                                <option value="例假">例假</option>
-                                <option value="喪假">喪假</option>
-                                <option value="產假">產假</option>
-                                <option value="陪產假">陪產假</option>
-                                <option value="婚假">婚假</option>
-                                <option value="公假">公假</option>
-                            </select>
-                            <button onclick="applyLeave()" class="w-full bg-indigo-600 text-white py-3 rounded-xl text-xs font-bold hover:bg-indigo-700 shadow-md">提交申請</button>
-                        </div>
-                    </div>
+// ✅ 登入
+async function login() {
+    const id = document.getElementById('loginId').value.toUpperCase();
+    const pw = document.getElementById('loginPw').value;
 
-                    <!-- 假別天數統計 -->
-                    <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-                        <h3 class="font-bold text-xs uppercase text-slate-400 mb-5 tracking-widest">假別剩餘天數</h3>
-                        <div id="leaveBalanceList" class="space-y-6"></div>
-                    </div>
-                </div>
+    if (userCredentials[id] && userCredentials[id] === pw) {
 
-                <!-- 表格顯示區 -->
-                <div class="lg:col-span-4 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-                    <div class="p-6 border-b bg-slate-50/50 flex flex-wrap justify-between items-center gap-4">
-                        <div class="flex gap-2">
-                            <input type="text" id="searchId" placeholder="工號 A001-A005" class="text-xs p-3 border rounded-xl outline-none w-48 focus:ring-2 focus:ring-blue-500">
-                            <button onclick="searchEmp()" class="text-xs bg-slate-800 text-white px-6 rounded-xl font-bold hover:bg-black transition">分析統計報表</button>
-                        </div>
-                        <div class="flex gap-4 text-[9px] font-bold uppercase bg-white px-3 py-1 rounded-full border">
-                            <span class="text-slate-900">● 正常</span> <span class="text-red-500">● 遲到</span> <span class="text-green-500">● 早退</span> <span class="text-indigo-500">● 請假</span>
-                        </div>
-                    </div>
-                    <div class="table-container">
-                        <table class="w-full text-xs text-center border-collapse">
-                            <thead id="tableHead" class="bg-slate-50 text-slate-400 font-bold"></thead>
-                            <tbody id="tableBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+        await loadData(); // 🔥 改這裡
 
-            <!-- 報表區 -->
-            <div id="searchResultPanel" class="hidden space-y-6">
-                <div class="bg-white p-8 rounded-[3rem] shadow-xl border-l-8 border-slate-800">
-                    <div class="flex justify-between items-start mb-8">
-                        <h2 id="resultTitle" class="text-3xl font-black text-slate-800">員工出席報表</h2>
-                        <button onclick="document.getElementById('searchResultPanel').classList.add('hidden')" class="text-slate-300 text-2xl">✕</button>
-                    </div>
-                    <div id="annualSummary" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10"></div>
-                </div>
-            </div>
-        </main>
-    </div>
+        initMonthSelect();
+        document.getElementById('loginPage').classList.add('hidden');
+        document.getElementById('mainDashboard').classList.remove('hidden');
+        document.getElementById('userDisp').innerText = id;
+        document.getElementById('leaveDate').valueAsDate = new Date();
 
-    <script>
-        const userCredentials = { "A001": "8888", "A002": "8888", "A003": "8888", "A004": "8888", "A005": "8888" };
-        const employees = ["A001", "A002", "A003", "A004", "A005"];
-        const now = new Date();
-        const curY = now.getFullYear();
-        const curM = now.getMonth();
-        const curD = now.getDate();
+        initTable();
+        updateDailyRate();
+    } else {
+        document.getElementById('loginError').classList.remove('hidden');
+    }
+}
 
-        let attendanceData = {};
-        const leaveConfig = {
-            "A001": { "特休": {total: 10, used: 2}, "年假": {total: 5, used: 1} },
-            "A002": { "特休": {total: 10, used: 5}, "年假": {total: 5, used: 0} },
-            "A003": { "特休": {total: 10, used: 0}, "年假": {total: 5, used: 2} },
-            "A004": { "特休": {total: 10, used: 8}, "年假": {total: 5, used: 4} },
-            "A005": { "特休": {total: 10, used: 1}, "年假": {total: 5, used: 3} }
-        };
+// ✅ 打卡（送到 API）
+async function doPunch(type) {
+    const id = document.getElementById('userDisp').innerText;
 
-        function initMonthSelect() {
-            const select = document.getElementById('monthSelect');
-            let html = "";
-            for (let i = 2; i >= 0; i--) {
-                let d = new Date(curY, curM - i, 1);
-                let m = d.getMonth();
-                let y = d.getFullYear();
-                html += `<option value="${y}-${m}">${y}年 ${m + 1}月</option>`;
-            }
-            select.innerHTML = html;
-        }
+    await fetch("/api/checkin", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            name: id,
+            type: type
+        })
+    });
 
-        /**
-         * 修復隨機生成邏輯：確保工作日 100% 覆蓋
-         */
-        function generateData() {
-            employees.forEach(emp => {
-                attendanceData[emp] = {};
-                for (let i = 0; i < 3; i++) {
-                    let dObj = new Date(curY, curM - i, 1);
-                    let y = dObj.getFullYear(), m = dObj.getMonth();
-                    let key = `${y}-${m}`;
-                    attendanceData[emp][key] = {};
-                    let daysInMonth = new Date(y, m + 1, 0).getDate();
-                    
-                    for (let d = 1; d <= daysInMonth; d++) {
-                        // 排除當日及以後的未來日期
-                        if (y === curY && m === curM && d >= curD) continue;
-                        
-                        const date = new Date(y, m, d);
-                        const w = date.getDay();
-                        
-                        // 週末跳過（或可定義為例假）
-                        if (w === 0 || w === 6) continue;
+    alert("打卡成功");
 
-                        let rand = Math.random();
-                        if (rand < 0.88) {
-                            attendanceData[emp][key][d] = { s: "正常", on: "08:50", off: "18:05" };
-                        } else if (rand < 0.93) {
-                            attendanceData[emp][key][d] = { s: "遲到", on: "09:15", off: "18:10" };
-                        } else if (rand < 0.96) {
-                            attendanceData[emp][key][d] = { s: "早退", on: "08:45", off: "17:15" };
-                        } else {
-                            // 剩餘機率強迫生成請假，避免遺漏
-                            const leaves = ["病假", "事假", "特休", "年假"];
-                            const lType = leaves[Math.floor(Math.random() * leaves.length)];
-                            attendanceData[emp][key][d] = { s: lType, on: "請假", off: "請假" };
-                        }
-                    }
-                }
-            });
-        }
+    await loadData();
+    initTable();
+    updateDailyRate();
+}
 
-        function login() {
-            const id = document.getElementById('loginId').value.toUpperCase();
-            const pw = document.getElementById('loginPw').value;
-            if (userCredentials[id] && userCredentials[id] === pw) {
-                generateData();
-                initMonthSelect();
-                document.getElementById('loginPage').classList.add('hidden');
-                document.getElementById('mainDashboard').classList.remove('hidden');
-                document.getElementById('userDisp').innerText = id;
-                document.getElementById('leaveDate').valueAsDate = new Date();
-                renderLeaveBalance(id); 
-                initTable(); 
-                updateDailyRate();
-            } else {
-                document.getElementById('loginError').classList.remove('hidden');
-            }
-        }
+// ✅ 請假
+async function applyLeave() {
+    const id = document.getElementById('userDisp').innerText;
+    const dateVal = document.getElementById('leaveDate').value;
+    const type = document.getElementById('leaveTypeSelect').value;
 
-        function renderLeaveBalance(uid) {
-            const data = leaveConfig[uid];
-            let html = "";
-            for (let type in data) {
-                const leave = data[type]; 
-                const remain = Math.max(0, leave.total - leave.used); 
-                const percent = (remain / leave.total) * 100;
-                html += `<div><div class="flex justify-between text-xs font-bold mb-1"><span>${type}</span><span class="text-slate-400">剩餘 ${remain}D / ${leave.total}D</span></div>
-                         <div class="progress-bar"><div class="progress-fill bg-blue-600" style="width: ${percent}%"></div></div></div>`;
-            }
-            document.getElementById('leaveBalanceList').innerHTML = html;
-        }
+    if (!dateVal) return alert("請選擇日期");
 
-        function initTable() {
-            const val = document.getElementById('monthSelect').value;
-            if(!val) return;
-            const [y, m] = val.split('-').map(Number);
-            const key = `${y}-${m}`;
-            const daysInM = new Date(y, m + 1, 0).getDate();
-            const wNames = ['日', '一', '二', '三', '四', '五', '六'];
-            
-            let h = `<tr><th class="p-4 sticky-col border-b">工號</th>`;
-            for (let d = 1; d <= daysInM; d++) h += `<th class="p-2 border-b ${(y===curY&&m===curM&&d===curD)?'bg-blue-600 text-white':''}">${d}<br>${wNames[new Date(y, m, d).getDay()]}</th>`;
-            document.getElementById('tableHead').innerHTML = h + `</tr>`;
-            
-            let b = "";
-            employees.forEach(emp => {
-                b += `<tr><td class="p-4 font-black sticky-col border-b shadow-sm bg-white">${emp}</td>`;
-                for (let d = 1; d <= daysInM; d++) {
-                    const w = new Date(y, m, d).getDay();
-                    let content = "—", color = "text-slate-200", tip = "無記錄", click = "";
-                    
-                    if (w === 0 || w === 6) { 
-                        content = "例假"; 
-                        color = "text-slate-300"; 
-                    } else if (attendanceData[emp][key] && attendanceData[emp][key][d]) {
-                        const data = attendanceData[emp][key][d];
-                        content = data.s; 
-                        tip = `記錄：${data.on || '--'} ~ ${data.off || '--'}`;
-                        if (["正常", "遲到", "早退"].includes(content)) {
-                            color = content === "正常" ? "text-slate-900" : "text-red-500";
-                        } else { 
-                            color = "text-indigo-500 leave-cell"; 
-                            if (emp === document.getElementById('userDisp').innerText) click = `onclick="cancelLeave('${emp}', '${key}', ${d}, '${content}')"`;
-                        }
-                    }
-                    b += `<td class="p-2 border-b border-r border-slate-50 font-bold ${color} tooltip" data-tip="${tip}" ${click}>${content}</td>`;
-                }
-                b += `</tr>`;
-            });
-            document.getElementById('tableBody').innerHTML = b;
-            updateMonthlyRate();
-        }
+    await fetch("/api/leave", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            name: id,
+            date: dateVal,
+            type: type
+        })
+    });
 
-        function applyLeave() {
-            const id = document.getElementById('userDisp').innerText;
-            const dateVal = document.getElementById('leaveDate').value;
-            const type = document.getElementById('leaveTypeSelect').value;
-            if (!dateVal) return alert("請選擇日期");
-            
-            const dateObj = new Date(dateVal);
-            const y = dateObj.getFullYear(), m = dateObj.getMonth(), d = dateObj.getDate();
-            const key = `${y}-${m}`;
+    alert("請假成功");
 
-            // 檢查是否已存在紀錄
-            if (attendanceData[id][key] && attendanceData[id][key][d]) {
-                if(!confirm("該日已有紀錄，是否覆蓋？")) return;
-                // 如果覆蓋的是特休/年假，先歸還額度
-                const oldType = attendanceData[id][key][d].s;
-                if(leaveConfig[id][oldType]) leaveConfig[id][id][oldType].used--;
+    await loadData();
+    initTable();
+}
+
+// ✅ 月份選單
+function initMonthSelect() {
+    const select = document.getElementById('monthSelect');
+    let html = "";
+    for (let i = 2; i >= 0; i--) {
+        let d = new Date(curY, curM - i, 1);
+        let m = d.getMonth();
+        let y = d.getFullYear();
+        html += `<option value="${y}-${m}">${y}年 ${m + 1}月</option>`;
+    }
+    select.innerHTML = html;
+}
+
+// ✅ 表格
+function initTable() {
+    const val = document.getElementById('monthSelect').value;
+    if(!val) return;
+
+    const [y, m] = val.split('-').map(Number);
+    const key = `${y}-${m}`;
+    const daysInM = new Date(y, m + 1, 0).getDate();
+
+    let h = `<tr><th>工號</th>`;
+    for (let d = 1; d <= daysInM; d++) {
+        h += `<th>${d}</th>`;
+    }
+    document.getElementById('tableHead').innerHTML = h + `</tr>`;
+
+    let b = "";
+
+    employees.forEach(emp => {
+        b += `<tr><td>${emp}</td>`;
+        for (let d = 1; d <= daysInM; d++) {
+            let content = "—";
+
+            if (attendanceData[emp] &&
+                attendanceData[emp][key] &&
+                attendanceData[emp][key][d]) {
+
+                content = attendanceData[emp][key][d].s;
             }
 
-            // 特休/年假 額度檢查
-            if (leaveConfig[id][type]) {
-                const remain = leaveConfig[id][type].total - leaveConfig[id][type].used;
-                if (remain <= 0) return alert(`${type}額度不足！`);
-                leaveConfig[id][type].used += 1;
-            }
-
-            if (!attendanceData[id][key]) attendanceData[id][key] = {};
-            attendanceData[id][key][d] = { s: type, on: "請假", off: "請假" };
-            
-            renderLeaveBalance(id);
-            initTable();
-            alert(`已完成 ${dateVal} ${type} 申請`);
+            b += `<td>${content}</td>`;
         }
+        b += `</tr>`;
+    });
 
-        function cancelLeave(emp, key, d, type) {
-            if (confirm(`確定取消 ${type}？`)) {
-                delete attendanceData[emp][key][d];
-                if (leaveConfig[emp][type]) leaveConfig[emp][type].used = Math.max(0, leaveConfig[emp][type].used - 1);
-                renderLeaveBalance(emp);
-                initTable();
-            }
-        }
+    document.getElementById('tableBody').innerHTML = b;
+}
 
-        function doPunch(type) {
-            const t = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
-            const id = document.getElementById('userDisp').innerText;
-            const key = `${curY}-${curM}`;
-            if (!attendanceData[id][key]) attendanceData[id][key] = {};
-            if (!attendanceData[id][key][curD]) attendanceData[id][key][curD] = { s: "正常", on: "", off: "" };
-            let rec = attendanceData[id][key][curD];
-            if (type === '上班') rec.on = t; else rec.off = t;
-            initTable();
-            updateDailyRate();
-        }
+// ✅ 今日出席率
+function updateDailyRate() {
+    const key = `${curY}-${curM}`;
+    let p = 0;
 
-        function updateDailyRate() {
-            const key = `${curY}-${curM}`;
-            let p = 0; employees.forEach(e => { if (attendanceData[e][key] && attendanceData[e][key][curD]) p++; });
-            document.getElementById('dailyRate').innerText = `${(p/employees.length*100).toFixed(1)}%`;
+    employees.forEach(e => {
+        if (attendanceData[e] &&
+            attendanceData[e][key] &&
+            attendanceData[e][key][curD]) {
+            p++;
         }
+    });
 
-        function updateMonthlyRate() {
-            const val = document.getElementById('monthSelect').value;
-            if(!val) return;
-            const [y, m] = val.split('-').map(Number);
-            const key = `${y}-${m}`;
-            let total = 0, present = 0;
-            employees.forEach(e => {
-                if (attendanceData[e][key]) {
-                    Object.values(attendanceData[e][key]).forEach(v => { 
-                        total++; 
-                        if (["正常", "遲到", "早退"].includes(v.s)) present++; 
-                    });
-                }
-            });
-            document.getElementById('monthlyRate').innerText = total > 0 ? `${(present/total*100).toFixed(1)}%` : "0.0%";
-        }
-
-        function updateClock() {
-            document.getElementById('clock').innerText = new Date().toLocaleTimeString('en-GB');
-            document.getElementById('dateStr').innerText = new Date().toDateString().toUpperCase();
-        }
-        setInterval(updateClock, 1000); updateClock();
-
-        function searchEmp() {
-            const id = document.getElementById('searchId').value.toUpperCase();
-            if (!employees.includes(id)) return alert("工號錯誤");
-            let stats = { n:0, l:0, lv:0 };
-            for(let k in attendanceData[id]) {
-                Object.values(attendanceData[id][k]).forEach(v => {
-                    if (v.s === "正常") stats.n++;
-                    else if (["遲到","早退"].includes(v.s)) stats.l++;
-                    else stats.lv++;
-                });
-            }
-            document.getElementById('annualSummary').innerHTML = `
-                <div class="bg-blue-600 text-white p-5 rounded-3xl"><p class="text-[10px] opacity-70">正常天數</p><p class="text-3xl font-black">${stats.n}</p></div>
-                <div class="bg-red-50 p-5 rounded-3xl text-red-600"><p class="text-[10px]">異常次數</p><p class="text-3xl font-black">${stats.l}</p></div>
-                <div class="bg-indigo-50 p-5 rounded-3xl text-indigo-600"><p class="text-[10px]">累計請假</p><p class="text-3xl font-black">${stats.lv}</p></div>`;
-            document.getElementById('searchResultPanel').classList.remove('hidden');
-        }
-    </script>
-</body>
-</html>
+    document.getElementById('dailyRate').innerText =
+        `${(p / employees.length * 100).toFixed(1)}%`;
+}
+</script>
