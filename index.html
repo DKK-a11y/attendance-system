@@ -1,6 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>雲端考勤系統（正式版）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 p-6">
+
+<!-- 登入 -->
+<div id="loginPage" class="max-w-md mx-auto bg-white p-6 rounded-xl shadow">
+    <h2 class="text-xl font-bold mb-4">登入</h2>
+    <input id="loginId" placeholder="工號" class="w-full p-2 border mb-2">
+    <input id="loginPw" placeholder="密碼" type="password" class="w-full p-2 border mb-4">
+    <button onclick="login()" class="w-full bg-blue-600 text-white p-2 rounded">登入</button>
+    <p id="loginError" class="text-red-500 hidden mt-2">登入失敗</p>
+</div>
+
+<!-- 主畫面 -->
+<div id="mainDashboard" class="hidden">
+
+    <h1 class="text-2xl font-bold mb-4">打卡系統</h1>
+
+    <p>使用者：<span id="userDisp"></span></p>
+
+    <div class="mt-4">
+        <button onclick="doPunch('上班')" class="bg-green-500 text-white px-4 py-2 mr-2">上班打卡</button>
+        <button onclick="doPunch('下班')" class="bg-gray-500 text-white px-4 py-2">下班打卡</button>
+    </div>
+
+    <div class="mt-4">
+        <input type="date" id="leaveDate" class="border p-2">
+        <select id="leaveTypeSelect" class="border p-2">
+            <option value="特休">特休</option>
+            <option value="病假">病假</option>
+            <option value="事假">事假</option>
+        </select>
+        <button onclick="applyLeave()" class="bg-purple-500 text-white px-4 py-2">請假</button>
+    </div>
+
+    <h2 class="mt-6 font-bold">出席表</h2>
+
+    <table class="w-full mt-2 border">
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+
+    <p class="mt-4">今日出席率：<span id="dailyRate"></span></p>
+
+</div>
+
 <script>
-const userCredentials = { "A001": "8888", "A002": "8888", "A003": "8888", "A004": "8888", "A005": "8888" };
-const employees = ["A001", "A002", "A003", "A004", "A005"];
+
+const userCredentials = {
+    "A001": "8888",
+    "A002": "8888",
+    "A003": "8888",
+    "A004": "8888",
+    "A005": "8888"
+};
+
+const employees = ["A001","A002","A003","A004","A005"];
 
 const now = new Date();
 const curY = now.getFullYear();
@@ -9,14 +70,13 @@ const curD = now.getDate();
 
 let attendanceData = {};
 
-// ✅ 從後端抓資料
+// ✅ 讀資料
 async function loadData() {
     try {
         const res = await fetch("/api/getData");
         const data = await res.json();
         attendanceData = data || {};
     } catch (e) {
-        console.log("尚未有資料，使用空資料");
         attendanceData = {};
     }
 }
@@ -28,30 +88,29 @@ async function login() {
 
     if (userCredentials[id] && userCredentials[id] === pw) {
 
-        await loadData(); // 🔥 改這裡
+        await loadData();
 
-        initMonthSelect();
         document.getElementById('loginPage').classList.add('hidden');
         document.getElementById('mainDashboard').classList.remove('hidden');
+
         document.getElementById('userDisp').innerText = id;
-        document.getElementById('leaveDate').valueAsDate = new Date();
 
         initTable();
         updateDailyRate();
+
     } else {
         document.getElementById('loginError').classList.remove('hidden');
     }
 }
 
-// ✅ 打卡（送到 API）
+// ✅ 打卡
 async function doPunch(type) {
+
     const id = document.getElementById('userDisp').innerText;
 
     await fetch("/api/checkin", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
+        headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
             name: id,
             type: type
@@ -67,20 +126,19 @@ async function doPunch(type) {
 
 // ✅ 請假
 async function applyLeave() {
+
     const id = document.getElementById('userDisp').innerText;
-    const dateVal = document.getElementById('leaveDate').value;
+    const date = document.getElementById('leaveDate').value;
     const type = document.getElementById('leaveTypeSelect').value;
 
-    if (!dateVal) return alert("請選擇日期");
+    if (!date) return alert("請選日期");
 
     await fetch("/api/leave", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
+        headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
             name: id,
-            date: dateVal,
+            date: date,
             type: type
         })
     });
@@ -91,70 +149,60 @@ async function applyLeave() {
     initTable();
 }
 
-// ✅ 月份選單
-function initMonthSelect() {
-    const select = document.getElementById('monthSelect');
-    let html = "";
-    for (let i = 2; i >= 0; i--) {
-        let d = new Date(curY, curM - i, 1);
-        let m = d.getMonth();
-        let y = d.getFullYear();
-        html += `<option value="${y}-${m}">${y}年 ${m + 1}月</option>`;
-    }
-    select.innerHTML = html;
-}
-
 // ✅ 表格
 function initTable() {
-    const val = document.getElementById('monthSelect').value;
-    if(!val) return;
 
-    const [y, m] = val.split('-').map(Number);
-    const key = `${y}-${m}`;
-    const daysInM = new Date(y, m + 1, 0).getDate();
+    const days = new Date(curY, curM+1, 0).getDate();
 
-    let h = `<tr><th>工號</th>`;
-    for (let d = 1; d <= daysInM; d++) {
+    let h = "<tr><th>工號</th>";
+    for (let d=1; d<=days; d++) {
         h += `<th>${d}</th>`;
     }
-    document.getElementById('tableHead').innerHTML = h + `</tr>`;
+    document.getElementById('tableHead').innerHTML = h + "</tr>";
 
     let b = "";
 
-    employees.forEach(emp => {
+    employees.forEach(emp=>{
         b += `<tr><td>${emp}</td>`;
-        for (let d = 1; d <= daysInM; d++) {
-            let content = "—";
+
+        for (let d=1; d<=days; d++) {
+
+            let val = "—";
 
             if (attendanceData[emp] &&
-                attendanceData[emp][key] &&
-                attendanceData[emp][key][d]) {
+                attendanceData[emp][`${curY}-${curM}`] &&
+                attendanceData[emp][`${curY}-${curM}`][d]) {
 
-                content = attendanceData[emp][key][d].s;
+                val = attendanceData[emp][`${curY}-${curM}`][d].s;
             }
 
-            b += `<td>${content}</td>`;
+            b += `<td>${val}</td>`;
         }
-        b += `</tr>`;
+
+        b += "</tr>";
     });
 
     document.getElementById('tableBody').innerHTML = b;
 }
 
-// ✅ 今日出席率
+// ✅ 出席率
 function updateDailyRate() {
-    const key = `${curY}-${curM}`;
+
     let p = 0;
 
-    employees.forEach(e => {
+    employees.forEach(e=>{
         if (attendanceData[e] &&
-            attendanceData[e][key] &&
-            attendanceData[e][key][curD]) {
+            attendanceData[e][`${curY}-${curM}`] &&
+            attendanceData[e][`${curY}-${curM}`][curD]) {
             p++;
         }
     });
 
     document.getElementById('dailyRate').innerText =
-        `${(p / employees.length * 100).toFixed(1)}%`;
+        (p / employees.length * 100).toFixed(1) + "%";
 }
+
 </script>
+
+</body>
+</html>
