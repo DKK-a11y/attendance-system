@@ -1,208 +1,367 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>雲端考勤系統（正式版）</title>
-<script src="https://cdn.tailwindcss.com"></script>
-</head>
+import React, { useState, useEffect, useMemo } from 'react';
+import { initializeApp, getApps } from 'firebase/app';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  collection,
+  query
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged,
+  signInWithCustomToken
+} from 'firebase/auth';
+import { 
+  Clock, 
+  Users, 
+  Coffee, 
+  AlertCircle, 
+  CheckCircle2, 
+  LogOut, 
+  Smartphone,
+  ShieldCheck,
+  LayoutDashboard
+} from 'lucide-react';
 
-<body class="bg-gray-100 p-6">
+// --- 配置與初始化 ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'v3-attendance-cloud';
 
-<!-- 登入 -->
-<div id="loginPage" class="max-w-md mx-auto bg-white p-6 rounded-xl shadow">
-    <h2 class="text-xl font-bold mb-4">登入</h2>
-    <input id="loginId" placeholder="工號" class="w-full p-2 border mb-2">
-    <input id="loginPw" placeholder="密碼" type="password" class="w-full p-2 border mb-4">
-    <button onclick="login()" class="w-full bg-blue-600 text-white p-2 rounded">登入</button>
-    <p id="loginError" class="text-red-500 hidden mt-2">登入失敗</p>
-</div>
+// 預設員工名單
+const STAFF = [
+  { id: 'A001', name: '張小明', dept: '研發部' },
+  { id: 'A002', name: '李美玲', dept: '設計部' },
+  { id: 'A003', name: '王大同', dept: '業務部' },
+  { id: 'A004', name: '陳曉華', dept: '人事部' },
+  { id: 'A005', name: '趙精誠', dept: '營運部' },
+];
 
-<!-- 主畫面 -->
-<div id="mainDashboard" class="hidden">
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [currentStaff, setCurrentStaff] = useState(null);
+  const [attendanceData, setAttendanceData] = useState({});
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [activeTab, setActiveTab] = useState('punch');
+  const [authError, setAuthError] = useState(null);
 
-    <h1 class="text-2xl font-bold mb-4">打卡系統</h1>
+  // 1. 強化身份驗證邏輯 (Rule 3: Auth Before Queries)
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth Error:", err);
+        setAuthError(err.message);
+      }
+    };
 
-    <p>使用者：<span id="userDisp"></span></p>
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
 
-    <div class="mt-4">
-        <button onclick="doPunch('上班')" class="bg-green-500 text-white px-4 py-2 mr-2">上班打卡</button>
-        <button onclick="doPunch('下班')" class="bg-gray-500 text-white px-4 py-2">下班打卡</button>
-    </div>
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-    <div class="mt-4">
-        <input type="date" id="leaveDate" class="border p-2">
-        <select id="leaveTypeSelect" class="border p-2">
-            <option value="特休">特休</option>
-            <option value="病假">病假</option>
-            <option value="事假">事假</option>
-        </select>
-        <button onclick="applyLeave()" class="bg-purple-500 text-white px-4 py-2">請假</button>
-    </div>
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, []);
 
-    <h2 class="mt-6 font-bold">出席表</h2>
+  // 2. 實時同步資料庫 (Rule 1 & 2: 嚴格路徑與簡單查詢)
+  useEffect(() => {
+    // 必須等待 user 驗證完成後才執行 Firestore 查詢
+    if (!user) return;
 
-    <table class="w-full mt-2 border">
-        <thead id="tableHead"></thead>
-        <tbody id="tableBody"></tbody>
-    </table>
+    const colPath = `/artifacts/${appId}/public/data/attendance`;
+    const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'attendance');
+    
+    // 使用簡單查詢並包含錯誤回調
+    const unsubData = onSnapshot(colRef, 
+      (snapshot) => {
+        const data = {};
+        snapshot.forEach(doc => { 
+          data[doc.id] = doc.data(); 
+        });
+        setAttendanceData(data);
+      }, 
+      (err) => {
+        console.error("Firestore Permission/Access Error:", err);
+      }
+    );
 
-    <p class="mt-4">今日出席率：<span id="dailyRate"></span></p>
+    return () => unsubData();
+  }, [user]);
 
-</div>
+  // 3. 處理打卡邏輯
+  const handlePunch = async (type) => {
+    if (!user || !currentStaff) return;
+    
+    const now = new Date();
+    const year = now.getFullYear();
+    const monthKey = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const day = now.getDate();
+    const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
-<script>
+    const isLate = type === 'in' && (now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 0));
+    
+    // Rule 1: 指定 Document 路徑
+    const staffDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendance', currentStaff.id);
+    const currentRecord = attendanceData[currentStaff.id] || {};
+    const monthData = currentRecord[monthKey] || {};
 
-const userCredentials = {
-    "A001": "8888",
-    "A002": "8888",
-    "A003": "8888",
-    "A004": "8888",
-    "A005": "8888"
-};
+    const updatedMonthData = {
+      ...monthData,
+      [day]: {
+        ...monthData[day],
+        [type === 'in' ? 'checkIn' : 'checkOut']: timeStr,
+        status: isLate ? '遲到' : '正常',
+        timestamp: Date.now()
+      }
+    };
 
-const employees = ["A001","A002","A003","A004","A005"];
-
-const now = new Date();
-const curY = now.getFullYear();
-const curM = now.getMonth();
-const curD = now.getDate();
-
-let attendanceData = {};
-
-// ✅ 讀資料
-async function loadData() {
     try {
-        const res = await fetch("/api/getData");
-        const data = await res.json();
-        attendanceData = data || {};
-    } catch (e) {
-        attendanceData = {};
+      await setDoc(staffDocRef, { [monthKey]: updatedMonthData }, { merge: true });
+      alert(`${currentStaff.name} ${type === 'in' ? '上班' : '下班'}打卡成功！`);
+    } catch (err) {
+      console.error("Save Error:", err);
+      alert("儲存失敗：權限不足或網路錯誤");
     }
-}
+  };
 
-// ✅ 登入
-async function login() {
-    const id = document.getElementById('loginId').value.toUpperCase();
-    const pw = document.getElementById('loginPw').value;
+  const stats = useMemo(() => {
+    const today = currentTime.getDate();
+    const monthKey = `${currentTime.getFullYear()}-${String(currentTime.getMonth() + 1).padStart(2, '0')}`;
+    let present = 0, late = 0, leave = 0;
 
-    if (userCredentials[id] && userCredentials[id] === pw) {
-
-        await loadData();
-
-        document.getElementById('loginPage').classList.add('hidden');
-        document.getElementById('mainDashboard').classList.remove('hidden');
-
-        document.getElementById('userDisp').innerText = id;
-
-        initTable();
-        updateDailyRate();
-
-    } else {
-        document.getElementById('loginError').classList.remove('hidden');
-    }
-}
-
-// ✅ 打卡
-async function doPunch(type) {
-
-    const id = document.getElementById('userDisp').innerText;
-
-    await fetch("/api/checkin", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-            name: id,
-            type: type
-        })
+    STAFF.forEach(s => {
+      const record = attendanceData[s.id]?.[monthKey]?.[today];
+      if (record) {
+        if (record.checkIn) present++;
+        if (record.status === '遲到') late++;
+        if (record.type === 'leave') leave++;
+      }
     });
 
-    alert("打卡成功");
+    return { present, late, leave, total: STAFF.length };
+  }, [attendanceData, currentTime]);
 
-    await loadData();
-    initTable();
-    updateDailyRate();
+  if (authError) return <ErrorScreen message={authError} />;
+  if (!user) return <LoadingScreen />;
+
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] font-sans">
+      <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center gap-2">
+          <div className="bg-blue-600 p-2 rounded-lg text-white">
+            <ShieldCheck size={20} />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">Enterprise Cloud HRM</h1>
+        </div>
+        <div className="flex items-center gap-4 text-sm font-medium">
+          <button 
+            onClick={() => setActiveTab('punch')}
+            className={`px-4 py-2 rounded-full transition ${activeTab==='punch' ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            即時打卡
+          </button>
+          <button 
+            onClick={() => setActiveTab('dash')}
+            className={`px-4 py-2 rounded-full transition ${activeTab==='dash' ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            管理後台
+          </button>
+        </div>
+      </nav>
+
+      <main className="max-w-5xl mx-auto p-4 md:p-8">
+        {activeTab === 'punch' ? (
+          <div className="grid md:grid-cols-2 gap-8 items-start">
+            <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/50 p-8 border border-slate-100">
+              <div className="mb-8 text-center">
+                <p className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-2">System Terminal</p>
+                <h2 className="text-5xl font-mono font-black text-slate-800 tabular-nums mb-2">
+                  {currentTime.toLocaleTimeString('zh-TW', { hour12: false })}
+                </h2>
+                <p className="text-slate-400 font-medium">{currentTime.toLocaleDateString('zh-TW', { dateStyle: 'full' })}</p>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-2 block ml-1">選擇打卡員工</label>
+                  <select 
+                    className="w-full bg-slate-50 border-none rounded-2xl py-4 px-5 font-bold focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                    onChange={(e) => setCurrentStaff(STAFF.find(s => s.id === e.target.value))}
+                    value={currentStaff?.id || ""}
+                  >
+                    <option value="">-- 請選擇您的姓名 --</option>
+                    {STAFF.map(s => <option key={s.id} value={s.id}>{s.name} ({s.id})</option>)}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <PunchButton 
+                    label="上班簽到" 
+                    icon={<Clock size={24}/>} 
+                    color="bg-emerald-500" 
+                    disabled={!currentStaff}
+                    onClick={() => handlePunch('in')}
+                  />
+                  <PunchButton 
+                    label="下班簽退" 
+                    icon={<LogOut size={24}/>} 
+                    color="bg-slate-800" 
+                    disabled={!currentStaff}
+                    onClick={() => handlePunch('out')}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-400 flex items-center gap-2 px-2">
+                <Smartphone size={16}/> 裝置記錄與同步狀態
+              </h3>
+              {currentStaff ? (
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-xl">👤</div>
+                    <div>
+                      <p className="font-bold text-slate-800 text-lg">{currentStaff.name}</p>
+                      <p className="text-xs text-slate-400 font-medium">{currentStaff.dept}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <StatusItem label="上班紀錄" value={attendanceData[currentStaff.id]?.[`${currentTime.getFullYear()}-${String(currentTime.getMonth() + 1).padStart(2, '0')}`]?.[currentTime.getDate()]?.checkIn || '尚未打卡'} />
+                    <StatusItem label="下班紀錄" value={attendanceData[currentStaff.id]?.[`${currentTime.getFullYear()}-${String(currentTime.getMonth() + 1).padStart(2, '0')}`]?.[currentTime.getDate()]?.checkOut || '尚未打卡'} />
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-slate-100 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center text-slate-400 font-medium">
+                  請選擇員工以查看即時同步狀態
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard title="應到人數" value={stats.total} icon={<Users className="text-blue-600"/>} bg="bg-blue-50" />
+              <StatCard title="實到人數" value={stats.present} icon={<CheckCircle2 className="text-emerald-600"/>} bg="bg-emerald-50" />
+              <StatCard title="遲到人數" value={stats.late} icon={<AlertCircle className="text-rose-600"/>} bg="bg-rose-50" />
+              <StatCard title="休假/請假" value={stats.leave} icon={<Coffee className="text-amber-600"/>} bg="bg-amber-50" />
+            </div>
+
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-8 py-6 border-b flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <LayoutDashboard size={18} className="text-slate-400"/>
+                  <h3 className="font-bold text-slate-800">全體員工即時動態</h3>
+                </div>
+                <span className="text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-full uppercase tracking-widest">Live Syncing</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b">
+                    <tr>
+                      <th className="px-8 py-4">姓名</th>
+                      <th className="px-8 py-4">部門</th>
+                      <th className="px-8 py-4">上班</th>
+                      <th className="px-8 py-4">下班</th>
+                      <th className="px-8 py-4">狀態</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {STAFF.map(s => {
+                      const record = attendanceData[s.id]?.[`${currentTime.getFullYear()}-${String(currentTime.getMonth() + 1).padStart(2, '0')}`]?.[currentTime.getDate()];
+                      return (
+                        <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-8 py-4 font-bold text-slate-700">{s.name}</td>
+                          <td className="px-8 py-4 text-xs font-medium text-slate-400">{s.dept}</td>
+                          <td className="px-8 py-4 font-mono font-bold text-sm text-slate-600">{record?.checkIn || '--:--'}</td>
+                          <td className="px-8 py-4 font-mono font-bold text-sm text-slate-600">{record?.checkOut || '--:--'}</td>
+                          <td className="px-8 py-4">
+                            {record ? (
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-black ${record.status === '正常' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                                {record.status}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 text-[10px] font-bold">未打卡</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
 }
 
-// ✅ 請假
-async function applyLeave() {
-
-    const id = document.getElementById('userDisp').innerText;
-    const date = document.getElementById('leaveDate').value;
-    const type = document.getElementById('leaveTypeSelect').value;
-
-    if (!date) return alert("請選日期");
-
-    await fetch("/api/leave", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-            name: id,
-            date: date,
-            type: type
-        })
-    });
-
-    alert("請假成功");
-
-    await loadData();
-    initTable();
+function LoadingScreen() {
+  return (
+    <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
+      <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      <p className="font-black text-sm tracking-widest uppercase opacity-50">System Initializing</p>
+    </div>
+  );
 }
 
-// ✅ 表格
-function initTable() {
-
-    const days = new Date(curY, curM+1, 0).getDate();
-
-    let h = "<tr><th>工號</th>";
-    for (let d=1; d<=days; d++) {
-        h += `<th>${d}</th>`;
-    }
-    document.getElementById('tableHead').innerHTML = h + "</tr>";
-
-    let b = "";
-
-    employees.forEach(emp=>{
-        b += `<tr><td>${emp}</td>`;
-
-        for (let d=1; d<=days; d++) {
-
-            let val = "—";
-
-            if (attendanceData[emp] &&
-                attendanceData[emp][`${curY}-${curM}`] &&
-                attendanceData[emp][`${curY}-${curM}`][d]) {
-
-                val = attendanceData[emp][`${curY}-${curM}`][d].s;
-            }
-
-            b += `<td>${val}</td>`;
-        }
-
-        b += "</tr>";
-    });
-
-    document.getElementById('tableBody').innerHTML = b;
+function ErrorScreen({ message }) {
+  return (
+    <div className="h-screen w-full flex flex-col items-center justify-center bg-rose-50 text-rose-600 p-8 text-center">
+      <AlertCircle size={48} className="mb-4" />
+      <h2 className="text-xl font-bold mb-2">認證初始化失敗</h2>
+      <p className="max-w-md text-sm opacity-80">{message}</p>
+    </div>
+  );
 }
 
-// ✅ 出席率
-function updateDailyRate() {
-
-    let p = 0;
-
-    employees.forEach(e=>{
-        if (attendanceData[e] &&
-            attendanceData[e][`${curY}-${curM}`] &&
-            attendanceData[e][`${curY}-${curM}`][curD]) {
-            p++;
-        }
-    });
-
-    document.getElementById('dailyRate').innerText =
-        (p / employees.length * 100).toFixed(1) + "%";
+function PunchButton({ label, icon, color, disabled, onClick }) {
+  return (
+    <button 
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] text-white transition-all shadow-lg active:scale-95 ${disabled ? 'bg-slate-100 text-slate-300 shadow-none cursor-not-allowed' : `${color} hover:brightness-110 shadow-${color}/20`}`}
+    >
+      {icon}
+      <span className="font-black text-sm">{label}</span>
+    </button>
+  );
 }
 
-</script>
+function StatusItem({ label, value }) {
+  return (
+    <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+      <span className="text-xs font-bold text-slate-400">{label}</span>
+      <span className="font-mono font-black text-slate-700">{value}</span>
+    </div>
+  );
+}
 
-</body>
-</html>
+function StatCard({ title, value, icon, bg }) {
+  return (
+    <div className="bg-white p-6 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm">
+      <div>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{title}</p>
+        <p className="text-3xl font-black text-slate-800">{value}</p>
+      </div>
+      <div className={`p-4 rounded-2xl ${bg}`}>{icon}</div>
+    </div>
+  );
+}
